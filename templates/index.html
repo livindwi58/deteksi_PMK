@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Beranda{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <!-- Hero Section -->
+        <div class="text-center mb-5">
+            <h1 class="display-4 fw-bold text-success mb-3">
+                <i class="fas fa-cow"></i> Sistem Deteksi dan Diagnosis PMK
+            </h1>
+            <p class="lead text-muted">
+                Deteksi dini Penyakit Mulut dan Kuku (PMK) pada sapi menggunakan teknologi
+                <span class="badge bg-success">Image Processing</span>
+            </p>
+        </div>
+
+        <!-- Status Model -->
+        {% if model_loaded %}
+        <div class="alert alert-success text-center">
+            <i class="fas fa-check-circle"></i> Model siap digunakan
+        </div>
+        {% else %}
+        <div class="alert alert-warning text-center">
+            <i class="fas fa-exclamation-triangle"></i> Model sedang dimuat, silakan tunggu...
+        </div>
+        {% endif %}
+
+        <!-- Main Features -->
+        <div class="row g-4 mb-5 justify-content-center">
+            <div class="col-md-8">
+                <div class="card h-100 border-0 shadow">
+                    <div class="card-body text-center p-4">
+                        <div class="feature-icon bg-success text-white rounded-circle mb-3">
+                            <i class="fas fa-camera fa-3x p-3"></i>
+                        </div>
+                        <h3 class="card-title">Deteksi via Gambar</h3>
+                        <p class="card-text text-muted">
+                            Upload gambar sapi untuk mendeteksi kemungkinan infeksi PMK
+                            menggunakan teknologi image processing dan machine learning.
+                        </p>
+                        <ul class="list-unstyled text-start mb-4">
+                            <li><i class="fas fa-check text-success me-2"></i>Akurasi tinggi</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Hasil cepat</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Support berbagai format gambar</li>
+                        </ul>
+                        <a href="{{ url_for('upload') }}" class="btn btn-success btn-lg w-100">
+                            <i class="fas fa-upload me-2"></i>Upload Gambar
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cara Kerja -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <h2 class="text-center mb-4">Cara Kerja Sistem</h2>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card text-center h-100">
+                            <div class="card-body">
+                                <div class="step-circle mx-auto">1</div>
+                                <h5>Upload Gambar</h5>
+                                <p class="text-muted">Upload gambar sapi untuk analisis awal menggunakan image processing</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card text-center h-100">
+                            <div class="card-body">
+                                <div class="step-circle mx-auto">2</div>
+                                <h5>Deteksi PMK</h5>
+                                <p class="text-muted">Sistem menganalisis gambar dan memberikan hasil deteksi</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card text-center h-100">
+                            <div class="card-body">
+                                <div class="step-circle mx-auto">3</div>
+                                <h5>Diagnosis Lanjutan</h5>
+                                <p class="text-muted">Jika terdeteksi sakit, lanjut ke sistem pakar untuk diagnosis lengkap</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Riwayat Terbaru -->
+        {% if history %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Riwayat Deteksi Terbaru</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Waktu</th>
+                                        <th>Gambar</th>
+                                        <th>Hasil</th>
+                                        <th>Keyakinan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in history %}
+                                    <tr>
+                                        <td>{{ item.timestamp }}</td>
+                                        <td>{{ item.image_path }}</td>
+                                        <td>
+                                            {% if item.prediction == 'sakit' %}
+                                                <span class="badge bg-warning text-dark">Positif PMK</span>
+                                            {% else %}
+                                                <span class="badge bg-success">Sehat</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ "%.2f"|format(item.confidence) }}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Statistik Cepat -->
+        <div class="row mt-4">
+            <div class="col-md-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <i class="fas fa-camera fa-3x mb-2"></i>
+                        <h3>100+</h3>
+                        <p>Gambar Terproses</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <i class="fas fa-check-circle fa-3x mb-2"></i>
+                        <h3>95%</h3>
+                        <p>Akurasi Deteksi</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <i class="fas fa-clock fa-3x mb-2"></i>
+                        <h3>&lt; 5 detik</h3>
+                        <p>Waktu Proses</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.feature-icon {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Riwayat Deteksi{% endblock %}
+
+{% block content %}
+<div class="row">
+        <div class="col-12">
+            <h2 class="mb-4"><i class="fas fa-history me-2"></i>Riwayat Deteksi
+                {% if data_source %}
+                    <span class="badge bg-secondary ms-2">Sumber: {{ data_source|upper }}</span>
+                {% endif %}
+            </h2>
+        </div>
+</div>
+
+<!-- Statistik Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title">Total Deteksi</h6>
+                        <h2 class="mb-0">{{ stats.total }}</h2>
+                    </div>
+                    <i class="fas fa-camera fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title">Sehat</h6>
+                        <h2 class="mb-0">{{ stats.negatif }}</h2>
+                    </div>
+                    <i class="fas fa-check-circle fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title">Positif PMK</h6>
+                        <h2 class="mb-0">{{ stats.positif }}</h2>
+                    </div>
+                    <i class="fas fa-exclamation-triangle fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title">Akurasi Rata-rata</h6>
+                        <h2 class="mb-0">
+                            {% if stats.total > 0 %}
+                                {{ "%.1f"|format((stats.negatif + stats.positif) / stats.total * 100) }}%
+                            {% else %}
+                                0%
+                            {% endif %}
+                        </h2>
+                    </div>
+                    <i class="fas fa-chart-line fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Detections Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-history me-2"></i>Riwayat Deteksi Terbaru</h5>
+            </div>
+            <div class="card-body">
+                {% if recent %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Gambar</th>
+                                <th>Hasil</th>
+                                <th>Keyakinan</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in recent %}
+                            <tr id="pred-{{ item.id if item.id is defined else (item.filename or loop.index) }}">
+                                <td>{{ item.timestamp }}</td>
+                                <td>
+                                    {% if item.filename %}
+                                        <a href="{{ url_for('uploaded_file', filename=item.filename) }}" target="_blank">
+                                            <i class="fas fa-image me-1"></i>{{ item.filename[:20] }}...
+                                        </a>
+                                    {% else %}
+                                        {{ item.image_path }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.prediction == 'sakit' %}
+                                        <span class="badge bg-warning text-dark">Positif PMK</span>
+                                    {% else %}
+                                        <span class="badge bg-success">Sehat</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                        <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar {% if item.prediction == 'sakit' %}bg-warning{% else %}bg-success{% endif %}" 
+                                             style="width: 0%;" data-width="{{ item.confidence|round(1) }}">
+                                            {{ "%.1f"|format(item.confidence) }}%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-info" onclick="viewDetails('{{ item.filename or item.image_path }}')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Belum ada data deteksi. Silakan upload gambar terlebih dahulu.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Buttons -->
+<div class="row mt-3">
+    <div class="col-12 text-center">
+        <button class="btn btn-success" onclick="exportData('csv')">
+            <i class="fas fa-file-csv me-2"></i>Export CSV
+        </button>
+        <button class="btn btn-success" onclick="exportData('excel')">
+            <i class="fas fa-file-excel me-2"></i>Export Excel
+        </button>
+        <button class="btn btn-secondary" onclick="window.print()">
+            <i class="fas fa-print me-2"></i>Print
+        </button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Chart untuk distribusi hasil
+const ctx1 = document.getElementById('resultChart')?.getContext('2d');
+const resultDataValues = JSON.parse(document.getElementById('resultChart')?.dataset?.values || '[]');
+if (ctx1 && resultDataValues.length) {
+    new Chart(ctx1, {
+        type: 'pie',
+        data: {
+            labels: ['Sehat', 'Positif PMK'],
+            datasets: [{
+                data: resultDataValues,
+                backgroundColor: ['#28a745', '#ffc107'],
+                borderColor: ['#218838', '#e0a800'],
+                borderWidth: 1
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+}
+
+// Chart untuk tren (contoh data)
+const ctx2 = document.getElementById('trendChart')?.getContext('2d');
+if (ctx2) {
+    new Chart(ctx2, {
+        type: 'line',
+        data: {
+            labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
+            datasets: [{
+                label: 'Deteksi',
+                data: [12, 19, 15, 17, 24, 23, 20],
+                borderColor: '#28a745',
+                backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+}
+
+function viewDetails(filename) {
+    alert('View details for: ' + filename);
+}
+
+function exportData(format) {
+    if (format === 'csv') {
+        window.location.href = "{{ url_for('export_csv') }}";
+    } else if (format === 'excel') {
+        window.location.href = "{{ url_for('export_excel') }}";
+    }
+}
+</script>
+{% endblock %}

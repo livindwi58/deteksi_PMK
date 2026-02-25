@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block title %}Riwayat Diagnosis{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="fas fa-history me-2"></i>Riwayat Diagnosis Sistem Pakar
+                    {% if data_source %}
+                        <span class="badge bg-secondary ms-2">Sumber: {{ data_source|upper }}</span>
+                    {% endif %}
+                </h4>
+            </div>
+            <div class="card-body">
+                
+                <!-- Filter Section -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <input type="text" class="form-control" id="searchInput" placeholder="Cari...">
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="filterDiagnosis">
+                            <option value="all">Semua Diagnosis</option>
+                            <option value="ringan">PMK Ringan</option>
+                            <option value="sedang">PMK Sedang</option>
+                            <option value="berat">PMK Berat</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="date" class="form-control" id="dateFilter">
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-success w-100" onclick="applyFilters()">
+                            <i class="fas fa-filter me-2"></i>Filter
+                        </button>
+                    </div>
+                </div>
+                
+                {% if history %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover" id="diagnosisTable">
+                        <thead class="table-success">
+                            <tr>
+                                <th>No</th>
+                                <th>Waktu</th>
+                                <th>Gejala Terpilih</th>
+                                <th>Diagnosis</th>
+                                <th>Tingkat Keyakinan</th>
+                                <th>Rekomendasi</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in history %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ item.timestamp }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-info" onclick="showGejala('{{ item.gejala }}')">
+                                        <i class="fas fa-list me-1"></i>Lihat Gejala
+                                    </button>
+                                </td>
+                                <td>
+                                    <span class="badge {% if 'Ringan' in item.diagnosis %}bg-success
+                                                      {% elif 'Sedang' in item.diagnosis %}bg-warning text-dark
+                                                      {% else %}bg-danger{% endif %}">
+                                        {{ item.diagnosis }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar {% if 'Ringan' in item.diagnosis %}bg-success
+                                                                  {% elif 'Sedang' in item.diagnosis %}bg-warning
+                                                                  {% else %}bg-danger{% endif %}" 
+                                             style="width: 0%;" data-width="{{ item.confidence|round(1) }}">
+                                            {{ "%.1f"|format(item.confidence) }}%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" onclick="showRekomendasi('{{ item.rekomendasi }}')">
+                                        <i class="fas fa-clipboard-list me-1"></i>Lihat
+                                    </button>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-info" onclick="viewDetail('{{ item.id }}')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-success" onclick="printDiagnosis('{{ item.id }}')">
+                                        <i class="fas fa-print"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <nav aria-label="Page navigation" class="mt-3">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1">Previous</a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">Next</a>
+                        </li>
+                    </ul>
+                </nav>
+                
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Belum ada riwayat diagnosis.</strong> Silakan lakukan konsultasi dengan sistem pakar terlebih dahulu.
+                </div>
+                {% endif %}
+                
+                <!-- Action Buttons -->
+                <div class="mt-4 text-center">
+                    <a href="{{ url_for('expert_system_page') }}" class="btn btn-success btn-lg me-2">
+                        <i class="fas fa-stethoscope me-2"></i>Konsultasi Sekarang
+                    </a>
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary btn-lg">
+                        <i class="fas fa-home me-2"></i>Kembali ke Home
+                    </a>
+                </div>
+                
+                <!-- Export Buttons -->
+                <div class="mt-3 text-center">
+                    <button class="btn btn-outline-success" onclick="exportHistory('csv')">
+                        <i class="fas fa-file-csv me-2"></i>Export CSV
+                    </button>
+                    <button class="btn btn-outline-success" onclick="exportHistory('pdf')">
+                        <i class="fas fa-file-pdf me-2"></i>Export PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal untuk Detail Gejala -->
+<div class="modal fade" id="gejalaModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-list me-2"></i>Detail Gejala</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="gejalaModalBody">
+                <!-- Gejala akan diisi via JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal untuk Rekomendasi -->
+<div class="modal fade" id="rekomendasiModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-clipboard-list me-2"></i>Rekomendasi Penanganan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="rekomendasiModalBody">
+                <!-- Rekomendasi akan diisi via JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th {
+    background-color: #28a745;
+    color: white;
+}
+
+.progress {
+    min-width: 100px;
+}
+
+.pagination .page-link {
+    color: #28a745;
+}
+
+.pagination .active .page-link {
+    background-color: #28a745;
+    border-color: #28a745;
+}
+
+@media print {
+    .btn, footer, nav, .pagination, .modal {
+        display: none !important;
+    }
+}
+</style>
+
+<script>
+function showGejala(gejala) {
+    const gejalaList = gejala.split(',');
+    let html = '<ul class="list-group">';
+    gejalaList.forEach(g => {
+        html += `<li class="list-group-item">${g}</li>`;
+    });
+    html += '</ul>';
+    
+    document.getElementById('gejalaModalBody').innerHTML = html;
+    new bootstrap.Modal(document.getElementById('gejalaModal')).show();
+}
+
+function showRekomendasi(rekomendasi) {
+    const rekomendasiList = rekomendasi.split('|');
+    let html = '<ol class="list-group list-group-numbered">';
+    rekomendasiList.forEach(r => {
+        html += `<li class="list-group-item">${r}</li>`;
+    });
+    html += '</ol>';
+    
+    document.getElementById('rekomendasiModalBody').innerHTML = html;
+    new bootstrap.Modal(document.getElementById('rekomendasiModal')).show();
+}
+
+function viewDetail(id) {
+    // Implement view detail
+    alert('View detail for ID: ' + id);
+}
+
+function printDiagnosis(id) {
+    // Implement print
+    window.print();
+}
+
+function applyFilters() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const filter = document.getElementById('filterDiagnosis').value;
+    const date = document.getElementById('dateFilter').value;
+    
+    const rows = document.querySelectorAll('#diagnosisTable tbody tr');
+    
+    rows.forEach(row => {
+        let show = true;
+        const text = row.textContent.toLowerCase();
+        const diagnosis = row.querySelector('td:nth-child(4)').textContent.toLowerCase();
+        
+        if (search && !text.includes(search)) show = false;
+        if (filter !== 'all' && !diagnosis.includes(filter)) show = false;
+        if (date) {
+            const rowDate = row.querySelector('td:nth-child(2)').textContent.split(' ')[0];
+            if (rowDate !== date) show = false;
+        }
+        
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function exportHistory(format) {
+    if (format === 'csv') {
+        alert('Export to CSV');
+    } else if (format === 'pdf') {
+        alert('Export to PDF');
+    }
+}
+</script>
+{% endblock %}

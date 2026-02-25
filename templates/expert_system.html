@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block title %}Sistem Pakar PMK{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="fas fa-stethoscope me-2"></i>Sistem Pakar Forward Chaining - Diagnosis PMK</h4>
+            </div>
+            <div class="card-body">
+                
+                <!-- Breadcrumb -->
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                        <li class="breadcrumb-item active" aria-current="page">Sistem Pakar</li>
+                    </ol>
+                </nav>
+
+                <!-- Info Panel -->
+                <div class="alert alert-info mb-4">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Cara Penggunaan:</strong> Pilih gejala yang Anda amati pada sapi, kemudian klik tombol "Diagnosis" untuk mendapatkan hasil.
+                </div>
+                
+                {% if image_info %}
+                <div class="alert alert-success mb-4">
+                    <h5 class="alert-heading"><i class="fas fa-camera me-2"></i>Informasi Deteksi Sebelumnya</h5>
+                    <div class="row">
+                        <div class="col-md-8">
+                            <p class="mb-1"><strong>File:</strong> {{ image_info.filename }}</p>
+                            <p class="mb-1"><strong>Hasil Deteksi:</strong> 
+                                <span class="badge {% if image_info.prediction == 'sakit' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                    {{ image_info.prediction|upper }}
+                                </span>
+                            </p>
+                            <p class="mb-0"><strong>Tingkat Keyakinan:</strong> {{ "%.2f"|format(image_info.confidence) }}%</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <i class="fas fa-arrow-right fa-2x text-success"></i>
+                            <p class="mb-0"><small>Lanjutkan diagnosis</small></p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if diagnosis %}
+                    <!-- Hasil Diagnosis -->
+                    <div class="alert alert-info" id="hasil">
+                        <h5 class="alert-heading mb-3">
+                            <i class="fas fa-clipboard-check me-2"></i>Hasil Diagnosis
+                        </h5>
+                        
+                        {% if diagnosis.status == 'terdiagnosis' %}
+                            {% for diag in diagnosis.diagnosis %}
+                                <div class="card mb-3 {% if loop.first %}border-success{% endif %}">
+                                    <div class="card-header {% if loop.first %}bg-success text-white{% endif %}">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-diagnoses me-2"></i>{{ diag.nama }}
+                                            {% if loop.first %}
+                                                <span class="badge bg-light text-success float-end">Diagnosis Utama</span>
+                                            {% endif %}
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <!-- Certainty Factor -->
+                                        <div class="mb-3">
+                                            <label class="fw-bold">Tingkat Keyakinan:</label>
+                                            <div class="progress">
+                                                <div class="progress-bar {% if loop.first %}bg-success{% else %}bg-info{% endif %}" 
+                                                     style="width: 0%;" data-width="{{ diag.cf|round(1) }}">
+                                                    {{ "%.1f"|format(diag.cf) }}%
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Deskripsi -->
+                                        <div class="mb-3">
+                                            <label class="fw-bold">Deskripsi:</label>
+                                            <p class="mb-0">{{ diag.deskripsi }}</p>
+                                        </div>
+                                        
+                                        <!-- Solusi -->
+                                        <div class="mb-0">
+                                            <label class="fw-bold">Rekomendasi Penanganan:</label>
+                                            <ol class="mb-0">
+                                                {% for s in diag.solusi %}
+                                                    <li class="mb-1">{{ s }}</li>
+                                                {% endfor %}
+                                            </ol>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            
+                            <!-- Gejala yang Diamati -->
+                            <div class="card mt-3">
+                                <div class="card-header bg-secondary text-white">
+                                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Gejala yang Diamati</h5>
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-group">
+                                        {% for g in diagnosis.gejala_teramati %}
+                                            <li class="list-group-item">
+                                                <i class="fas fa-check-circle text-success me-2"></i>
+                                                {{ g }}
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <!-- Catatan Penting -->
+                            <div class="alert alert-warning mt-3">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Catatan:</strong> Hasil diagnosis ini bersifat rekomendasi awal. 
+                                Untuk penanganan lebih lanjut, konsultasikan dengan dokter hewan.
+                            </div>
+                            
+                            <!-- Action Buttons -->
+                            <div class="mt-4 text-center">
+                                <button class="btn btn-success" onclick="window.print()">
+                                    <i class="fas fa-print me-2"></i>Cetak Hasil
+                                </button>
+                                <a href="{{ url_for('expert_system_page') }}" class="btn btn-primary">
+                                    <i class="fas fa-redo me-2"></i>Konsultasi Lagi
+                                </a>
+                                <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                                    <i class="fas fa-home me-2"></i>Kembali ke Home
+                                </a>
+                            </div>
+                            
+                        {% else %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-circle me-2"></i>
+                                {{ diagnosis.message }}
+                            </div>
+                            <div class="text-center">
+                                <a href="{{ url_for('expert_system_page') }}" class="btn btn-primary">
+                                    <i class="fas fa-redo me-2"></i>Coba Lagi
+                                </a>
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                {% else %}
+                    <!-- Form Gejala -->
+                    <form method="POST" action="{{ url_for('expert_system_page') }}" id="expertForm">
+                        <div class="mb-4">
+                            <h5 class="mb-3"><i class="fas fa-list-ul me-2"></i>Pilih Gejala yang Diamati:</h5>
+                            
+                            <!-- Kategori Gejala -->
+                            <div class="accordion" id="gejalaAccordion">
+                                <!-- Gejala Umum -->
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="headingUmum">
+                                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUmum">
+                                            <i class="fas fa-thermometer-half me-2"></i>Gejala Umum
+                                        </button>
+                                    </h2>
+                                    <div id="collapseUmum" class="accordion-collapse collapse show" data-bs-parent="#gejalaAccordion">
+                                        <div class="accordion-body">
+                                            <div class="row">
+                                                {% for kode, nama in gejala_list.items() %}
+                                                    {% if kode in ['G01', 'G02', 'G03', 'G04', 'G05'] %}
+                                                    <div class="col-md-6 mb-2">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" 
+                                                                   name="gejala" value="{{ kode }}" 
+                                                                   id="gejala{{ kode }}"
+                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
+                                                            <label class="form-check-label" for="gejala{{ kode }}">
+                                                                <strong>{{ kode }}:</strong> {{ nama }}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Gejala Mulut -->
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="headingMulut">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMulut">
+                                            <i class="fas fa-mouth me-2"></i>Gejala Mulut
+                                        </button>
+                                    </h2>
+                                    <div id="collapseMulut" class="accordion-collapse collapse" data-bs-parent="#gejalaAccordion">
+                                        <div class="accordion-body">
+                                            <div class="row">
+                                                {% for kode, nama in gejala_list.items() %}
+                                                    {% if kode in ['G06', 'G07', 'G08', 'G09', 'G10'] %}
+                                                    <div class="col-md-6 mb-2">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" 
+                                                                   name="gejala" value="{{ kode }}" 
+                                                                   id="gejala{{ kode }}"
+                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
+                                                            <label class="form-check-label" for="gejala{{ kode }}">
+                                                                <strong>{{ kode }}:</strong> {{ nama }}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Gejala Kaki -->
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="headingKaki">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKaki">
+                                            <i class="fas fa-paw me-2"></i>Gejala Kaki
+                                        </button>
+                                    </h2>
+                                    <div id="collapseKaki" class="accordion-collapse collapse" data-bs-parent="#gejalaAccordion">
+                                        <div class="accordion-body">
+                                            <div class="row">
+                                                {% for kode, nama in gejala_list.items() %}
+                                                    {% if kode in ['G11', 'G12', 'G13', 'G14', 'G15'] %}
+                                                    <div class="col-md-6 mb-2">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" 
+                                                                   name="gejala" value="{{ kode }}" 
+                                                                   id="gejala{{ kode }}"
+                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
+                                                            <label class="form-check-label" for="gejala{{ kode }}">
+                                                                <strong>{{ kode }}:</strong> {{ nama }}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Gejala Ambing -->
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="headingAmbing">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAmbing">
+                                            <i class="fas fa-tint me-2"></i>Gejala Ambing
+                                        </button>
+                                    </h2>
+                                    <div id="collapseAmbing" class="accordion-collapse collapse" data-bs-parent="#gejalaAccordion">
+                                        <div class="accordion-body">
+                                            <div class="row">
+                                                {% for kode, nama in gejala_list.items() %}
+                                                    {% if kode in ['G16', 'G17', 'G18', 'G19', 'G20'] %}
+                                                    <div class="col-md-6 mb-2">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" 
+                                                                   name="gejala" value="{{ kode }}" 
+                                                                   id="gejala{{ kode }}"
+                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
+                                                            <label class="form-check-label" for="gejala{{ kode }}">
+                                                                <strong>{{ kode }}:</strong> {{ nama }}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="mt-4 text-center">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-diagnoses me-2"></i>Diagnosis
+                            </button>
+                            <button type="reset" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-undo me-2"></i>Reset
+                            </button>
+                        </div>
+                        
+                        <!-- Tombol Pilih Semua -->
+                        <div class="mt-3 text-center">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="selectAll">
+                                <i class="fas fa-check-double me-2"></i>Pilih Semua
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="unselectAll">
+                                <i class="fas fa-times me-2"></i>Hapus Semua
+                            </button>
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Informasi Tambahan -->
+        <div class="card mt-3">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-question-circle me-2"></i>Tentang Sistem Pakar</h5>
+            </div>
+            <div class="card-body">
+                <p>Sistem pakar ini menggunakan metode <strong>Forward Chaining</strong> untuk mendiagnosis PMK pada sapi berdasarkan gejala yang diamati.</p>
+                <ul class="mb-0">
+                    <li>Total gejala: 20 gejala</li>
+                    <li>Total aturan: 10 aturan</li>
+                    <li>3 tingkat keparahan: Ringan, Sedang, Berat</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.accordion-button:not(.collapsed) {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.form-check-input:checked {
+    background-color: #28a745;
+    border-color: #28a745;
+}
+
+@media print {
+    .btn, footer, nav, .accordion-button {
+        display: none !important;
+    }
+    .accordion-collapse {
+        display: block !important;
+    }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Reset button
+    document.querySelector('button[type="reset"]')?.addEventListener('click', function(e) {
+        e.preventDefault();
+        document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    });
+
+    // Select All button
+    document.getElementById('selectAll')?.addEventListener('click', function() {
+        document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+    });
+
+    // Unselect All button
+    document.getElementById('unselectAll')?.addEventListener('click', function() {
+        document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    });
+
+    // Auto scroll to hasil diagnosis
+    if (window.location.hash === '#hasil') {
+        document.getElementById('hasil')?.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Form validation
+    document.getElementById('expertForm')?.addEventListener('submit', function(e) {
+        const checkedBoxes = document.querySelectorAll('input[type="checkbox"]:checked');
+        if (checkedBoxes.length === 0) {
+            e.preventDefault();
+            alert('Pilih minimal satu gejala untuk melakukan diagnosis!');
+        }
+    });
+});
+</script>
+{% endblock %}

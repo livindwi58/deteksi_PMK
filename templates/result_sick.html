@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Hasil Deteksi - Terindikasi Sakit{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card border-warning shadow">
+            <div class="card-header bg-warning text-dark">
+                <h4 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Hasil Deteksi - TERINDIKASI SAKIT</h4>
+            </div>
+            <div class="card-body">
+                
+                <!-- Warning Alert -->
+                <div class="alert alert-warning text-center mb-4">
+                    <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                    <h4 class="alert-heading">Perhatian! Sapi Terindikasi PMK</h4>
+                    <p class="mb-0">Gambar menunjukkan indikasi infeksi PMK. Segera lakukan tindakan pencegahan.</p>
+                </div>
+
+                <!-- Image and Result Info -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="text-center mb-4">
+                            <div class="image-container position-relative">
+                                <img src="{{ url_for('uploaded_file', filename=result.saved_filename) }}" 
+                                     class="img-fluid rounded shadow" style="max-height: 300px;" 
+                                     alt="Uploaded Image">
+                                <span class="badge bg-warning text-dark position-absolute top-0 end-0 m-2">
+                                    <i class="fas fa-exclamation"></i> SAKIT
+                                </span>
+                            </div>
+                            <p class="mt-2 text-muted">
+                                <i class="fas fa-image me-1"></i>{{ result.filename }}<br>
+                                <small>{{ result.size }} | {{ result.dimensions }}</small>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="result-details">
+                            <h5 class="mb-3"><i class="fas fa-chart-bar me-2"></i>Detail Deteksi</h5>
+                            
+                            <table class="table table-bordered">
+                                <tr>
+                                    <th style="width: 40%">Waktu Deteksi</th>
+                                    <td>{{ result.timestamp }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Hasil</th>
+                                    <td>
+                                        <span class="badge bg-warning text-dark">POSITIF PMK</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Tingkat Keyakinan</th>
+                                    <td>
+                                        <div class="progress">
+                                                <div class="progress-bar bg-warning" 
+                                                    style="width: 0%;" data-width="{{ (result.confidence * 100)|round(1) }}">
+                                                {{ "%.1f"|format(result.confidence * 100) }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Format Gambar</th>
+                                    <td>{{ result.format|upper }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gejala Terdeteksi -->
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-list me-2"></i>Gejala yang Terdeteksi</h5>
+                    <div class="row">
+                        {% for symptom in result.expert_analysis.symptoms_detected %}
+                        <div class="col-md-6 mb-2">
+                            <div class="card border-warning">
+                                <div class="card-body py-2">
+                                    <i class="fas fa-exclamation-circle text-warning me-2"></i>
+                                    {{ symptom }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Tindakan Darurat -->
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-ambulance me-2"></i>Tindakan Darurat</h5>
+                    <div class="alert alert-danger">
+                        <ul class="mb-0">
+                            <li><strong>Segera isolasi sapi yang terindikasi sakit</strong></li>
+                            <li>Bersihkan dan desinfeksi kandang</li>
+                            <li>Laporkan ke Dinas Peternakan setempat</li>
+                            <li>Batasi pergerakan ternak</li>
+                            <li>Gunakan alat pelindung diri saat kontak dengan sapi</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Rekomendasi -->
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-clipboard-list me-2"></i>Rekomendasi Awal</h5>
+                    <div class="row">
+                        {% for rec in result.expert_analysis.recommendations %}
+                        <div class="col-12 mb-2">
+                            <div class="card bg-light">
+                                <div class="card-body py-2">
+                                    <i class="fas fa-arrow-right text-warning me-2"></i>
+                                    {{ rec }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Call to Action - Sistem Pakar -->
+                <div class="mt-4 p-4 bg-warning bg-opacity-10 rounded">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h5 class="mb-2"><i class="fas fa-stethoscope me-2"></i>Langkah Selanjutnya</h5>
+                            <p class="mb-md-0">
+                                Untuk diagnosis lebih akurat dan rekomendasi penanganan spesifik, 
+                                silakan lanjutkan ke Sistem Pakar.
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <a href="{{ url_for('expert_system_page') }}" class="btn btn-warning btn-lg">
+                                <i class="fas fa-arrow-right me-2"></i>Lanjut ke Sistem Pakar
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="mt-4 text-center">
+                    <a href="{{ url_for('upload') }}" class="btn btn-success btn-lg me-2">
+                        <i class="fas fa-upload me-2"></i>Upload Gambar Lain
+                    </a>
+                    {% set last_db = session.get('last_prediction', {}).get('db_id') %}
+                    <a href="{{ url_for('riwayat_deteksi') }}{% if last_db %}#pred-{{ last_db }}{% endif %}" class="btn btn-secondary btn-lg">
+                        <i class="fas fa-history me-2"></i>Riwayat Deteksi
+                    </a>
+                </div>
+
+                <!-- Download Report -->
+                <div class="mt-3 text-center">
+                    <button class="btn btn-outline-warning" onclick="window.print()">
+                        <i class="fas fa-download me-2"></i>Download Laporan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabel Fitur -->
+        <div class="card mt-3">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-table me-2"></i>Detail Fitur Ekstraksi
+                    <button class="btn btn-sm btn-light float-end" type="button" data-bs-toggle="collapse" data-bs-target="#featureTable">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </h5>
+            </div>
+            <div class="collapse" id="featureTable">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered table-hover">
+                            <thead class="table-warning">
+                                <tr>
+                                    <th>Fitur</th>
+                                    <th>Nilai</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for feature, value in features_table %}
+                                <tr>
+                                    <td>{{ feature }}</td>
+                                    <td>{{ "%.4f"|format(value) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+{% endblock %}
