@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Detail Riwayat Deteksi{% endblock %}
+
+{% block content %}
+<div class="container-lg mt-5 mb-5">
+    {% if prediction %}
+    <div class="row">
+        <div class="col-lg-8 offset-lg-2">
+            <!-- Header -->
+            <div class="card border-success mb-4">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0"><i class="fas fa-search"></i> Detail Riwayat Deteksi</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Basic Info -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-2">Nama File Asli</h6>
+                            <p class="fw-bold">{{ prediction.original_filename or 'N/A' }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-2">Waktu Deteksi</h6>
+                            <p class="fw-bold">
+                                {% if prediction.timestamp %}
+                                    {{ prediction.timestamp[:19] | replace('T', ' ') }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Image Display -->
+                    {% if prediction.image_path %}
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-image"></i> Foto yang Dianalisis</h5>
+                        </div>
+                        <div class="card-body text-center">
+                            {% set image_url = '/uploads/' + prediction.filename %}
+                            <img src="{{ image_url }}" alt="Uploaded Image" class="img-fluid rounded" style="max-height: 400px;">
+                            <p class="text-muted mt-3 small">Gambar yang digunakan untuk analisis</p>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Prediction Result -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-stethoscope"></i> Hasil Prediksi</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="text-center p-4">
+                                        {% if prediction.prediction.lower() == 'sehat' %}
+                                            <div class="badge bg-success p-3 mb-3" style="font-size: 1.2rem;">
+                                                <i class="fas fa-check-circle"></i> SEHAT
+                                            </div>
+                                            <h5 class="text-success fw-bold">Kesimpulan: Organ Sehat</h5>
+                                        {% else %}
+                                            <div class="badge bg-danger p-3 mb-3" style="font-size: 1.2rem;">
+                                                <i class="fas fa-exclamation-circle"></i> SAKIT
+                                            </div>
+                                            <h5 class="text-danger fw-bold">Kesimpulan: PMK Terdeteksi</h5>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="alert alert-info">
+                                        <h6 class="text-muted mb-2">Confidence Score</h6>
+                                        <div class="progress mb-2" style="height: 25px;">
+                                            <div 
+                                                class="progress-bar {% if prediction.prediction.lower() == 'sehat' %}bg-success{% else %}bg-danger{% endif %}" 
+                                                role="progressbar" 
+                                                style="width: {{ prediction.confidence or 0 }}%"
+                                                aria-valuenow="{{ prediction.confidence or 0 }}" 
+                                                aria-valuemin="0" 
+                                                aria-valuemax="100">
+                                                <strong>{{ prediction.confidence or 0 }}%</strong>
+                                            </div>
+                                        </div>
+                                        <small class="text-muted">Tingkat kepercayaan model terhadap hasil prediksi</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Diagnosis Result (if exists) -->
+                    {% if diagnosis %}
+                    <div class="card mb-4 border-primary">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="fas fa-stethoscope"></i> Hasil Diagnosis Sistem Pakar</h5>
+                        </div>
+                        <div class="card-body">
+                            <!-- Diagnosis Name and Severity -->
+                            <div class="row mb-4">
+                                <div class="col-md-6">
+                                    <h6 class="text-muted mb-2">Diagnosis</h6>
+                                    <h5 class="fw-bold">
+                                        {% set diag_name = diagnosis.diagnosis.nama or 'Tidak diketahui' %}
+                                        {{ diag_name }}
+                                    </h5>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-muted mb-2">Tingkat Keparahan</h6>
+                                    <span class="badge p-2" style="font-size: 1rem;
+                                        {% if diagnosis.severity == 'ringan' %}background-color: #28a745;
+                                        {% elif diagnosis.severity == 'sedang' %}background-color: #ffc107;
+                                        {% else %}background-color: #dc3545;{% endif %}">
+                                        {{ diagnosis.severity|upper }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Description -->
+                            {% if diagnosis.diagnosis.deskripsi %}
+                            <div class="mb-4">
+                                <h6 class="text-muted mb-2">Deskripsi</h6>
+                                <p class="card-text">{{ diagnosis.diagnosis.deskripsi }}</p>
+                            </div>
+                            {% endif %}
+
+                            <!-- Observed Symptoms -->
+                            {% if diagnosis.diagnosis.gejala_teramati %}
+                            <div class="mb-4">
+                                <h6 class="text-muted mb-3">Gejala yang Teramati</h6>
+                                <div class="row">
+                                    {% for symptom_code in diagnosis.diagnosis.gejala_teramati %}
+                                    <div class="col-md-12 mb-2">
+                                        <div class="card bg-light">
+                                            <div class="card-body py-2 px-3">
+                                                <div class="row align-items-center">
+                                                    <div class="col-auto">
+                                                        <span class="badge bg-info">{{ symptom_code }}</span>
+                                                    </div>
+                                                    <div class="col">
+                                                        <p class="mb-0">{{ symptom_code|get_symptom_desc }}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Recommended Solutions -->
+                            {% if diagnosis.diagnosis.solusi %}
+                            <div class="mb-4">
+                                <h6 class="text-muted mb-2">Solusi dan Rekomendasi</h6>
+                                <ul class="list-group list-group-flush">
+                                    {% for solution in diagnosis.diagnosis.solusi %}
+                                    <li class="list-group-item">
+                                        <i class="fas fa-check-circle text-success me-2"></i>{{ solution }}
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+
+                            <!-- Confidence and All Diagnoses -->
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-muted mb-2">Tingkat Keyakinan Diagnosis</h6>
+                                    <div class="progress mb-2" style="height: 25px;">
+                                        <div class="progress-bar bg-primary" role="progressbar" 
+                                             style="width: {{ (diagnosis.confidence * 100) or 0 }}%"
+                                             aria-valuenow="{{ (diagnosis.confidence * 100) or 0 }}" 
+                                             aria-valuemin="0" aria-valuemax="100">
+                                            <strong>{{ "%.1f"|format((diagnosis.confidence * 100) or 0) }}%</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-muted mb-2">Waktu Diagnosis</h6>
+                                    <p class="fw-bold">
+                                        {% if diagnosis.timestamp %}
+                                            {{ diagnosis.timestamp[:19] | replace('T', ' ') }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- All Possible Diagnoses -->
+                            {% if diagnosis.diagnosis.semua_diagnosis %}
+                            <div class="mt-4">
+                                <h6 class="text-muted mb-3">Semua Kemungkinan Diagnosis</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Diagnosis</th>
+                                                <th>Confidence</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for alt_diag in diagnosis.diagnosis.semua_diagnosis %}
+                                            <tr>
+                                                <td>{{ alt_diag.nama }}</td>
+                                                <td>
+                                                    <div class="progress" style="height: 20px;">
+                                                        <div class="progress-bar" role="progressbar"
+                                                             style="width: {{ (alt_diag.cf * 100) or 0 }}%"
+                                                             aria-valuenow="{{ (alt_diag.cf * 100) or 0 }}" 
+                                                             aria-valuemin="0" aria-valuemax="100">
+                                                            {{ "%.1f"|format((alt_diag.cf * 100) or 0) }}%
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Belum Ada Diagnosis.</strong> Prediction ini belum didiagnosis oleh sistem pakar.
+                        <a href="{{ url_for('expert_system_page') }}" class="alert-link">Lakukan diagnosis sekarang.</a>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endif %}
+
+                    <!-- Actions -->
+                    <div class="d-grid gap-2 d-sm-flex justify-content-sm-between mt-4">
+                        <a href="{{ url_for('riwayat_deteksi') }}" class="btn btn-secondary btn-lg">
+                            <i class="fas fa-arrow-left"></i> Kembali ke Riwayat
+                        </a>
+                        <a href="{{ url_for('index') }}" class="btn btn-success btn-lg">
+                            <i class="fas fa-home"></i> Ke Halaman Beranda
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-danger" role="alert">
+        <h5 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> Data Tidak Ditemukan</h5>
+        <p>Maaf, riwayat deteksi dengan ID yang diminta tidak dapat ditemukan.</p>
+        <hr>
+        <a href="{{ url_for('riwayat_deteksi') }}" class="btn btn-primary">Kembali ke Riwayat Deteksi</a>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .table-hover tbody tr:hover {
+        background-color: rgba(40, 167, 69, 0.1);
+    }
+    
+    code {
+        background-color: #f8f9fa;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.9rem;
+    }
+    
+    .badge {
+        display: inline-block;
+    }
+</style>
+{% endblock %}
