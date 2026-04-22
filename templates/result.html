@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}{{ result.page_title or 'Hasil Deteksi' }}{% endblock %}
+
+{% block content %}
+{% set is_sick = result.is_sick if result.is_sick is defined else ('sakit' in (result.prediction|default('')|lower)) %}
+{% set card_border = 'border-warning' if is_sick else 'border-success' %}
+{% set header_bg = 'bg-warning text-dark' if is_sick else 'bg-success text-white' %}
+{% set header_icon = 'fa-exclamation-triangle' if is_sick else 'fa-check-circle' %}
+{% set header_text = 'Hasil Deteksi - TERINDIKASI SAKIT' if is_sick else 'Hasil Deteksi - SEHAT' %}
+{% set alert_class = 'alert-warning' if is_sick else 'alert-success' %}
+{% set alert_icon = 'fa-exclamation-triangle' if is_sick else 'fa-check-circle' %}
+{% set alert_title = 'Perhatian! Sapi Terindikasi PMK' if is_sick else 'Selamat! Sapi Anda Terdeteksi SEHAT' %}
+{% set alert_body = 'Gambar menunjukkan indikasi infeksi PMK. Segera lakukan tindakan pencegahan.' if is_sick else 'Tidak ditemukan indikasi PMK pada gambar yang diupload.' %}
+{% set label_badge = 'bg-warning text-dark' if is_sick else 'bg-success' %}
+{% set label_text = 'SAKIT' if is_sick else 'SEHAT' %}
+{% set result_badge = 'bg-warning text-dark' if is_sick else 'bg-success' %}
+{% set result_text = 'POSITIF PMK' if is_sick else 'SEHAT' %}
+{% set progress_class = 'bg-warning' if is_sick else 'bg-success' %}
+{% set recommendation_title = 'Rekomendasi Awal' if is_sick else 'Rekomendasi Perawatan' %}
+{% set recommendation_icon = 'fa-arrow-right text-warning' if is_sick else 'fa-check-circle text-success' %}
+{% set action_btn_class = 'btn-warning' if is_sick else 'btn-info' %}
+{% set action_btn_icon = 'fa-arrow-right' if is_sick else 'fa-stethoscope' %}
+{% set action_btn_text = 'Lanjut ke Sistem Pakar' if is_sick else 'Sistem Pakar' %}
+{% set table_head_class = 'table-warning' if is_sick else 'table-success' %}
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card {{ card_border }} shadow">
+            <div class="card-header {{ header_bg }}">
+                <h4 class="mb-0"><i class="fas {{ header_icon }} me-2"></i>{{ header_text }}</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert {{ alert_class }} text-center mb-4">
+                    <i class="fas {{ alert_icon }} fa-3x mb-3"></i>
+                    <h4 class="alert-heading">{{ alert_title }}</h4>
+                    <p class="mb-0">{{ alert_body }}</p>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="text-center mb-4">
+                            <div class="image-container position-relative">
+                                <img src="{{ url_for('uploaded_file', filename=result.saved_filename) }}"
+                                     class="img-fluid rounded shadow" style="max-height: 300px;"
+                                     alt="Uploaded Image">
+                                <span class="badge {{ label_badge }} position-absolute top-0 end-0 m-2">
+                                    <i class="fas {{ alert_icon if is_sick else 'fa-check' }}"></i> {{ label_text }}
+                                </span>
+                            </div>
+                            <p class="mt-2 text-muted">
+                                <i class="fas fa-image me-1"></i>{{ result.filename }}<br>
+                                <small>{{ result.size }} | {{ result.dimensions }}</small>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="result-details">
+                            <h5 class="mb-3"><i class="fas fa-chart-bar me-2"></i>Detail Deteksi</h5>
+                            <table class="table table-bordered">
+                                <tr>
+                                    <th style="width: 40%">Waktu Deteksi</th>
+                                    <td>{{ result.timestamp }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Hasil</th>
+                                    <td><span class="badge {{ result_badge }}">{{ result_text }}</span></td>
+                                </tr>
+                                <tr>
+                                    <th>Tingkat Keyakinan</th>
+                                    <td>
+                                        <div class="progress">
+                                            <div class="progress-bar {{ progress_class }}"
+                                                 style="width: 0%;" data-width="{{ (result.confidence * 100)|round(1) }}">
+                                                {{ "%.1f"|format(result.confidence * 100) }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Format Gambar</th>
+                                    <td>{{ result.format|upper }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                {% if is_sick %}
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-list me-2"></i>Gejala yang Terdeteksi</h5>
+                    <div class="row">
+                        {% for symptom in result.expert_analysis.symptoms_detected %}
+                        <div class="col-md-6 mb-2">
+                            <div class="card border-warning">
+                                <div class="card-body py-2">
+                                    <i class="fas fa-exclamation-circle text-warning me-2"></i>
+                                    {{ symptom }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-ambulance me-2"></i>Tindakan Darurat</h5>
+                    <div class="alert alert-danger">
+                        <ul class="mb-0">
+                            <li><strong>Segera isolasi sapi yang terindikasi sakit</strong></li>
+                            <li>Bersihkan dan desinfeksi kandang</li>
+                            <li>Laporkan ke Dinas Peternakan setempat</li>
+                            <li>Batasi pergerakan ternak</li>
+                            <li>Gunakan alat pelindung diri saat kontak dengan sapi</li>
+                        </ul>
+                    </div>
+                </div>
+                {% else %}
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-clipboard-list me-2"></i>{{ recommendation_title }}</h5>
+                    <div class="row">
+                        {% for rec in result.expert_analysis.recommendations %}
+                        <div class="col-md-6 mb-2">
+                            <div class="card bg-light">
+                                <div class="card-body py-2">
+                                    <i class="fas fa-check-circle text-success me-2"></i>
+                                    {{ rec }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h5 class="mb-3"><i class="fas fa-shield-alt me-2"></i>Tindakan Pencegahan</h5>
+                    <div class="alert alert-info">
+                        <ul class="mb-0">
+                            <li>Lakukan vaksinasi rutin sesuai jadwal</li>
+                            <li>Jaga kebersihan kandang dan lingkungan</li>
+                            <li>Berikan pakan bergizi dan air bersih</li>
+                            <li>Pantau kesehatan sapi secara berkala</li>
+                            <li>Batasi akses orang asing ke kandang</li>
+                        </ul>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="mt-4 text-center">
+                    <a href="{{ url_for('upload') }}" class="btn btn-success btn-lg me-2">
+                        <i class="fas fa-upload me-2"></i>Upload Gambar Lain
+                    </a>
+                    <a href="{{ url_for('expert_system_page') }}" class="btn {{ action_btn_class }} btn-lg me-2">
+                        <i class="fas {{ action_btn_icon }} me-2"></i>{{ action_btn_text }}
+                    </a>
+                    {% set last_db = session.get('last_prediction', {}).get('db_id') %}
+                    <a href="{{ url_for('riwayat_deteksi') }}{% if last_db %}#pred-{{ last_db }}{% endif %}" class="btn btn-secondary btn-lg">
+                        <i class="fas fa-history me-2"></i>Riwayat Deteksi
+                    </a>
+                </div>
+
+                <div class="mt-3 text-center">
+                    <button class="btn btn-outline-primary" onclick="window.print()">
+                        <i class="fas fa-download me-2"></i>Download Laporan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-table me-2"></i>Detail Fitur Ekstraksi
+                    <button class="btn btn-sm btn-light float-end" type="button" data-bs-toggle="collapse" data-bs-target="#featureTable">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </h5>
+            </div>
+            <div class="collapse" id="featureTable">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered table-hover">
+                            <thead class="{{ table_head_class }}">
+                                <tr>
+                                    <th>Fitur</th>
+                                    <th>Nilai</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for feature, value in features_table %}
+                                <tr>
+                                    <td>{{ feature }}</td>
+                                    <td>{{ "%.4f"|format(value) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.image-container {
+    position: relative;
+    display: inline-block;
+}
+
+.badge {
+    font-size: 1rem;
+    padding: 10px 15px;
+}
+
+.progress {
+    height: 25px;
+}
+
+.progress-bar {
+    line-height: 25px;
+    font-size: 14px;
+}
+
+@media print {
+    .btn, footer, nav {
+        display: none !important;
+    }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const predictionId = Number('{{ session.get("last_prediction", {}).get("db_id") or 0 }}');
+    if (predictionId > 0) {
+        const storageKey = 'pmk_predictions_ids';
+        let storedIds = [];
+
+        try {
+            storedIds = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            if (!Array.isArray(storedIds)) storedIds = [];
+        } catch (e) {
+            storedIds = [];
+        }
+
+        if (!storedIds.includes(predictionId)) {
+            storedIds.unshift(predictionId);
+            localStorage.setItem(storageKey, JSON.stringify(storedIds));
+        }
+    }
+
+    document.querySelectorAll('.progress-bar[data-width]').forEach(function(el) {
+        const width = Number(el.dataset.width || 0);
+        const safeWidth = Math.max(0, Math.min(100, width));
+        el.style.width = safeWidth + '%';
+    });
+});
+</script>
+{% endblock %}

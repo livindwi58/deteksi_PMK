@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory, send_file, flash, session
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory, send_file, flash, session, jsonify
 import io
 import datetime
 import os
@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from utils.helpers import load_model
-from utils.preprocessing import preprocess_image
+from utils.helpers import load_model, estimate_prediction_confidence
+from utils.preprocessing import preprocess_image, preprocess_pipeline, validate_cattle_image
 from utils.feature_extraction import FeatureExtractor
 from expert_system import ForwardChaining, KnowledgeBase  # Import sistem pakar
 
@@ -20,7 +20,7 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp'}
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ensure Flask uses the correct absolute template/static folders
+
 app = Flask(__name__, 
            template_folder=os.path.join(BASE_DIR, 'templates'), 
            static_folder=os.path.join(BASE_DIR, 'static'))
@@ -38,7 +38,7 @@ def get_symptom_desc(symptom_code):
     """Convert symptom code to description"""
     return kb.gejala.get(symptom_code, symptom_code)
 
-# Attempt MySQL integration (optional). If env var not set, fall back to CSV storage.
+
 try:
     from utils.mysql_db import (
         save_prediction_mysql,
@@ -51,7 +51,7 @@ try:
         get_diagnosis_by_prediction_id,
         get_engine,
     )
-    # Test DB connection now; only enable MySQL features if connect succeeds
+  
     try:
         engine = get_engine()
         # quick connect test
@@ -59,37 +59,60 @@ try:
             # initialize tables if needed
             try:
                 init_mysql_tables()
-            except Exception:
-                # ignore init errors; will fallback to CSV reads/writes at runtime
-                pass
+            except Exception as init_err:
+               
+                print(f"⚠️  Warning: Database tables initialization failed: {init_err}")
+        print("✓ MySQL Database connected successfully")
         MYSQL_AVAILABLE = True
     except Exception as e:
-        print('MySQL not available at startup:', e)
+        import traceback
+        print('❌ MySQL not available at startup:')
+        print(f"   Error: {e}")
+        print("   Cek: 1) MySQL Server berjalan? 2) .env credentials benar? 3) Database 'deteksi_pmk' ada?")
+        traceback.print_exc()
         MYSQL_AVAILABLE = False
-except Exception:
+except Exception as import_err:
+    print(f"❌ Failed to import MySQL utilities: {import_err}")
     MYSQL_AVAILABLE = False
-# Defer heavy model imports/loading to a background thread so startup remains snappy
+
 model = None
 scaler = None
 label_encoder = None
 extractor = FeatureExtractor()
+model_loading = False  
+model_loaded = False   
 
 def _load_model_background():
-    global model, scaler, label_encoder
+    global model, scaler, label_encoder, model_loading, model_loaded
+    
+    # Prevent double-loading
+    if model_loading or model_loaded:
+        return
+    
+    model_loading = True
     try:
         from utils.helpers import load_model
-        print('Loading ML model in background...')
+        print('[APP] Loading ML model in background...')
         m, s, le = load_model()
         model, scaler, label_encoder = m, s, le
-        print('Model loaded (background).')
+        model_loaded = True
+        print('[APP] Model loaded successfully.')
     except Exception as e:
         model = None
         scaler = None
         label_encoder = None
-        print(f"Background model load failed: {e}")
+        model_loaded = True  # Mark as done to prevent retry loop
+        print(f"[APP] ❌ Background model load failed: {e}")
+    finally:
+        model_loading = False
 
 import threading
 threading.Thread(target=_load_model_background, daemon=True).start()
+
+
+def is_model_ready():
+    """Check if model is loaded and ready to use"""
+    return model is not None and scaler is not None and label_encoder is not None
 
 
 def allowed_file(filename):
@@ -129,30 +152,110 @@ def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 
-@app.route('/dashboard')
-@app.route('/riwayat-deteksi')
 @app.route('/riwayat_deteksi')
 def riwayat_deteksi():
-    recent = []
-    stats = {'total': 0, 'positif': 0, 'negatif': 0}
+    # Halaman ditampilkan dulu, data diambil kemudian lewat API berdasarkan localStorage.
+    return render_template(
+        'riwayat_deteksi.html',
+        recent=[],
+        stats={'total': 0, 'positif': 0, 'negatif': 0, 'akurasi_rata_rata': 0.0},
+        data_source='client'
+    )
 
-    # Get data from MySQL database only
-    if MYSQL_AVAILABLE:
+
+def _serialize_prediction_row(prediction_row):
+    if not prediction_row:
+        return None
+
+    pred_id = prediction_row.get('id')
+    prediction = str(prediction_row.get('prediction') or '').lower()
+    confidence = float(prediction_row.get('confidence') or 0.0)
+
+    return {
+        'id': pred_id,
+        'original_filename': prediction_row.get('original_filename') or '',
+        'filename': prediction_row.get('filename') or '',
+        'image_path': prediction_row.get('image_path') or '',
+        'prediction': prediction,
+        'prediction_label': 'Positif PMK' if prediction == 'sakit' else 'Sehat',
+        'confidence': round(confidence, 1),
+        'timestamp': prediction_row.get('timestamp'),
+        'detail_url': url_for('detail_deteksi', pred_id=pred_id),
+        'image_url': url_for('uploaded_file', filename=prediction_row.get('filename') or '') if prediction_row.get('filename') else None,
+    }
+
+
+@app.route('/get_data_riwayat_deteksi', methods=['POST'])
+@app.route('/api/get_data_riwayat_deteksi', methods=['POST'])
+def get_data_riwayat_deteksi():
+    """Ambil data riwayat deteksi berdasarkan ID yang disimpan di localStorage."""
+    if not MYSQL_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'message': 'Database tidak tersedia',
+            'recent': [],
+            'stats': {'total': 0, 'positif': 0, 'negatif': 0, 'akurasi_rata_rata': 0.0}
+        }), 503
+
+    payload = request.get_json(silent=True) or {}
+    raw_ids = payload.get('ids', [])
+    if isinstance(raw_ids, (str, int, float)):
+        raw_ids = [raw_ids]
+
+    normalized_ids = []
+    for item in raw_ids if isinstance(raw_ids, list) else []:
         try:
-            rows = get_recent_predictions_mysql(limit=10)
-            # Query successful - return dengan data (bisa kosong)
-            recent = rows if rows else []
-            stats['total'] = len(recent)
-            stats['positif'] = int(sum(1 for r in recent if (str(r.get('prediction') or '').lower() == 'sakit')))
-            stats['negatif'] = int(sum(1 for r in recent if (str(r.get('prediction') or '').lower() == 'sehat')))
-            return render_template('riwayat_deteksi.html', recent=recent, stats=stats, data_source='mysql')
+            normalized_ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+
+    ordered_ids = []
+    seen = set()
+    for pred_id in normalized_ids:
+        if pred_id not in seen:
+            ordered_ids.append(pred_id)
+            seen.add(pred_id)
+
+    recent = []
+    total_confidence = 0.0
+    positif = 0
+    negatif = 0
+
+    for pred_id in ordered_ids:
+        try:
+            row = get_prediction_by_id(pred_id)
         except Exception as e:
-            print(f"✗ Error reading from MySQL: {e}")
-            flash('Error memuat riwayat deteksi dari database', 'danger')
-            return render_template('riwayat_deteksi.html', recent=recent, stats=stats, data_source='error')
-    else:
-        flash('Database tidak tersedia. Silakan setup database terlebih dahulu.', 'warning')
-        return render_template('riwayat_deteksi.html', recent=recent, stats=stats, data_source='database_error')
+            print(f"✗ Error getting prediction {pred_id} from MySQL: {e}")
+            row = None
+
+        if not row:
+            continue
+
+        serialized = _serialize_prediction_row(row)
+        if not serialized:
+            continue
+
+        recent.append(serialized)
+        total_confidence += float(serialized.get('confidence') or 0.0)
+        if serialized['prediction'] == 'sakit':
+            positif += 1
+        elif serialized['prediction'] == 'sehat':
+            negatif += 1
+
+    total = len(recent)
+    stats = {
+        'total': total,
+        'positif': positif,
+        'negatif': negatif,
+        'akurasi_rata_rata': round(total_confidence / total, 1) if total else 0.0,
+    }
+
+    return jsonify({
+        'success': True,
+        'recent': recent,
+        'stats': stats,
+        'message': 'Data riwayat berhasil dimuat' if recent else 'Tidak ada data riwayat pada localStorage'
+    })
 
 
 @app.route('/detail-deteksi/<int:pred_id>')
@@ -172,13 +275,22 @@ def detail_deteksi(pred_id):
                                      prediction=prediction, 
                                      diagnosis=diagnosis,
                                      data_source='mysql')
+            else:
+                print(f"✗ Prediction dengan ID {pred_id} tidak ditemukan di database")
         except Exception as e:
+            import traceback
             print(f"✗ Error getting prediction from MySQL: {e}")
+            traceback.print_exc()
     else:
-        flash('Database tidak tersedia. Silakan setup database terlebih dahulu.', 'danger')
+        print("✗ MYSQL_AVAILABLE = False, database tidak terhubung saat startup")
+        flash('⚠️ Database MySQL tidak tersedia. Pastikan:<br>'
+              '1. MySQL Server sedang berjalan<br>'
+              '2. Kredensial database di .env sudah benar<br>'
+              '3. Jalankan: <code>python setup_db.py</code>', 'danger')
+        return redirect(url_for('riwayat_deteksi'))
     
     # Not found or database error
-    flash(f"Prediksi dengan ID {pred_id} tidak ditemukan", 'danger')
+    flash(f"❌ Prediksi dengan ID {pred_id} tidak ditemukan di database", 'danger')
     return redirect(url_for('riwayat_deteksi'))
 
 
@@ -186,6 +298,60 @@ def detail_deteksi(pred_id):
 def upload():
     """Halaman upload gambar"""
     return render_template('upload.html', error=None)
+
+
+@app.route('/api/validate-image', methods=['POST'])
+def api_validate_image():
+    """API endpoint untuk validasi gambar real-time"""
+    if 'image' not in request.files:
+        return {'is_cattle': False, 'message': '❌ File tidak ditemukan'}, 400
+    
+    file = request.files['image']
+    if file.filename == '' or not allowed_file(file.filename):
+        return {'is_cattle': False, 'message': '❌ Format file tidak didukung (gunakan JPG/PNG/BMP)'}, 400
+    
+    temp_filepath = None
+    try:
+        # Simpan file temporary
+        from tempfile import NamedTemporaryFile
+        with NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
+            temp_filepath = tmp.name
+            file.save(temp_filepath)
+        
+        # Validasi gambar
+        is_cattle, confidence, reason = validate_cattle_image(temp_filepath, confidence_threshold=0.75)
+        
+        if is_cattle:
+            result = {
+                'is_cattle': True,
+                'message': f'✅ Gambar DITERIMA! Sapi terdeteksi dengan confidence {confidence*100:.0f}%',
+                'confidence': float(confidence)
+            }
+        else:
+            result = {
+                'is_cattle': False,
+                'message': reason or '❌ Ini bukan foto sapi',
+                'confidence': float(confidence)
+            }
+        
+        return result, 200
+    
+    except Exception as e:
+        print(f"[VALIDATE API] Error: {e}")
+        return {
+            'is_cattle': False,
+            'message': f'❌ Error saat validasi: {str(e)}'
+        }, 500
+    
+    finally:
+        # SELALU hapus temporary file
+        if temp_filepath:
+            try:
+                if os.path.exists(temp_filepath):
+                    os.remove(temp_filepath)
+                    print(f"[VALIDATE API] ✓ Temporary file dihapus: {temp_filepath}")
+            except Exception as e:
+                print(f"[VALIDATE API] ⚠️ Error menghapus temp file: {e}")
 
 
 @app.route('/predict', methods=['POST'])
@@ -207,19 +373,33 @@ def predict():
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
-        if model is None or scaler is None or label_encoder is None:
+        # File sudah di-validasi di frontend (/api/validate-image)
+        # Jangan validasi lagi, langsung lanjut ke diagnosis
+        print(f"[PREDICT] ✅ File diterima dari frontend validation: {filename}")
+
+        if not is_model_ready():
+            # Model belum siap - HAPUS FILE
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    print(f"[PREDICT] ✓ File DIHAPUS (model belum ready): {filename}")
+                except Exception as del_err:
+                    print(f"[PREDICT] ⚠️ Error menghapus file: {del_err}")
+            
             flash('Model belum tersedia. Jalankan training terlebih dahulu.', 'error')
             return redirect(url_for('index'))
 
         # Preprocess and extract
-        img_norm, img_resized, mask = preprocess_image(filepath)
-        features = extractor.extract_all_features(img_norm, mask)
+        img_rgb, gray_processed = preprocess_pipeline(filepath)
+        features = extractor.extract_all_features(img_rgb, gray_processed)
         features_scaled = scaler.transform([features])
 
         pred_encoded = model.predict(features_scaled)[0]
         prediction = label_encoder.inverse_transform([pred_encoded])[0]
-        probabilities = model.predict_proba(features_scaled)[0]
-        confidence = float(max(probabilities) * 100)
+        confidence = estimate_prediction_confidence(model, features_scaled)
+        if confidence is None:
+            probabilities = model.predict_proba(features_scaled)[0]
+            confidence = float(max(probabilities) * 100)
 
         # Prepare feature dictionary for database
         features_dict = {name: float(features[i]) for i, name in enumerate(extractor.feature_names)}
@@ -333,6 +513,8 @@ def result_healthy():
         'filename': pred['original_filename'],
         'saved_filename': pred['filename'],
         'prediction': 'Negatif PMK (Sehat)',
+        'is_sick': False,
+        'page_title': 'Hasil Deteksi - Sehat',
         'confidence': pred['confidence'] / 100.0,
         'expert_analysis': {
             'primary_conclusion': '',
@@ -356,7 +538,7 @@ def result_healthy():
     result['dimensions'] = f"{img_resized.shape[1]} x {img_resized.shape[0]} px"
     result['format'] = os.path.splitext(pred['filename'])[1].lstrip('.')
     
-    return render_template('result_healthy.html', 
+    return render_template('result.html', 
                          result=result, 
                          features_table=pred['features_table'])
 
@@ -375,6 +557,8 @@ def result_sick():
         'filename': pred['original_filename'],
         'saved_filename': pred['filename'],
         'prediction': 'Positif PMK (Terindikasi Sakit)',
+        'is_sick': True,
+        'page_title': 'Hasil Deteksi - Terindikasi Sakit',
         'confidence': pred['confidence'] / 100.0,
         'expert_analysis': {
             'primary_conclusion': 'Gambar menunjukkan indikasi infeksi PMK',
@@ -402,7 +586,7 @@ def result_sick():
     result['dimensions'] = f"{img_resized.shape[1]} x {img_resized.shape[0]} px"
     result['format'] = os.path.splitext(pred['filename'])[1].lstrip('.')
     
-    return render_template('result_sick.html', 
+    return render_template('result.html', 
                          result=result, 
                          features_table=pred['features_table'])
 
@@ -410,10 +594,6 @@ def result_sick():
 @app.route('/expert-system', methods=['GET', 'POST'])
 def expert_system_page():
     """Halaman sistem pakar forward chaining"""
-    # Batasi akses: hanya setelah ada hasil prediksi terakhir
-    if 'last_prediction' not in session:
-        flash('Akses hanya tersedia setelah melakukan deteksi gambar.', 'error')
-        return redirect(url_for('index'))
     if request.method == 'POST':
         # Dapatkan gejala yang dipilih
         gejala_terpilih = request.form.getlist('gejala')
@@ -428,47 +608,90 @@ def expert_system_page():
         # Get prediction_id dari session untuk Foreign Key
         prediction_id = session.get('last_prediction', {}).get('db_id')
         
-        # Save diagnosis ke database dengan FK ke predictions
-        if MYSQL_AVAILABLE and prediction_id:
+        # Jika tidak ada prediction_id (diagnosis langsung dari sistem pakar tanpa scan)
+        # Buatkan entry dummy di predictions table
+        if not prediction_id and diagnosis.get('status') == 'terdiagnosis' and MYSQL_AVAILABLE:
             try:
-                if diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis'):
-                    diag_list = diagnosis['diagnosis']
-                    main_diag = diag_list[0]
-                    
-                    # Determine severity from CF
-                    cf = main_diag.get('cf', 0)
-                    if cf >= 70:
-                        severity = 'berat'
-                    elif cf >= 50:
-                        severity = 'sedang'
-                    else:
-                        severity = 'ringan'
-                    
-                    # Prepare diagnosis details
-                    diagnosis_details = {
-                        'nama': main_diag.get('nama', ''),
-                        'deskripsi': main_diag.get('deskripsi', ''),
-                        'solusi': main_diag.get('solusi', []),
-                        'cf': float(cf),
-                        'gejala_teramati': gejala_terpilih,
-                        'semua_diagnosis': [
-                            {
-                                'nama': d.get('nama', ''),
-                                'cf': float(d.get('cf', 0))
-                            }
-                            for d in diag_list
-                        ]
-                    }
-                    
-                    # Save diagnosis dengan FK ke predictions
-                    diag_id = save_diagnosis_mysql(
-                        prediction_id=prediction_id,
-                        diagnosis_dict=diagnosis_details,
-                        severity=severity,
-                        confidence=float(cf),
-                        timestamp=datetime.datetime.utcnow()
-                    )
-                    print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}")
+                # Ambil diagnosis utama
+                diag_list = diagnosis['diagnosis']
+                main_diag = diag_list[0]
+                
+                # Tentukan prediction berdasarkan severity
+                severity = main_diag.get('severity', 'sedang')
+                if severity == 'berat':
+                    prediction = 'sakit'
+                elif severity == 'sedang':
+                    prediction = 'sakit'
+                else:
+                    prediction = 'sehat'
+                
+                confidence = main_diag.get('score', 0.5)
+                
+                # Buat entry yang menunjukkan diagnosis manual dari sistem pakar
+                features_dict = {
+                    'diagnosis_method': 'manual_expert_system',
+                    'severity': severity,
+                    'gejala_selected': gejala_terpilih
+                }
+                
+                # Save prediction untuk diagnosis manual
+                prediction_id = save_prediction_mysql(
+                    original_filename='Diagnosis Sistem Pakar (Manual)',
+                    filename='manual_expert_system',
+                    image_path='manual_expert_system',
+                    prediction=prediction,
+                    confidence=float(confidence),
+                    features_dict=features_dict
+                )
+                try:
+                    session.setdefault('last_prediction', {})
+                    session['last_prediction']['db_id'] = int(prediction_id)
+                except Exception:
+                    pass
+                print(f"✓ Created prediction entry for manual expert system diagnosis, id={prediction_id}")
+            except Exception as e:
+                print(f"✗ Error creating prediction entry for manual diagnosis: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Save diagnosis ke database dengan FK ke predictions
+        if MYSQL_AVAILABLE and prediction_id and diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis'):
+            try:
+                diag_list = diagnosis['diagnosis']
+                main_diag = diag_list[0]
+                
+                # Ambil severity dari diagnosis result (sudah di-map di expert_system)
+                severity = main_diag.get('severity', 'sedang')
+                score = main_diag.get('score', 0)
+                
+                # Prepare diagnosis details dengan severity yang tepat
+                diagnosis_details = {
+                    'nama': main_diag.get('nama', ''),
+                    'deskripsi': main_diag.get('deskripsi', ''),
+                    'solusi': main_diag.get('solusi', []),
+                    'score': float(score),
+                    'gejala_teramati': main_diag.get('gejala_teramati', gejala_terpilih),
+                    'semua_diagnosis': [
+                        {
+                            'nama': d.get('nama', ''),
+                            'severity': d.get('severity', ''),
+                            'score': float(d.get('score', 0))
+                        }
+                        for d in diag_list
+                    ]
+                }
+                
+                # Save diagnosis dengan FK ke predictions
+                diag_id = save_diagnosis_mysql(
+                    prediction_id=prediction_id,
+                    diagnosis_dict=diagnosis_details,
+                    severity=severity,
+                    confidence=float(score),
+                    timestamp=datetime.datetime.utcnow()
+                )
+                diagnosis['saved_diagnosis_id'] = diag_id
+                diagnosis['saved_prediction_id'] = int(prediction_id)
+                print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}, severity={severity}")
             except Exception as e:
                 print(f"✗ Error saving diagnosis to MySQL: {e}")
                 import traceback
@@ -485,6 +708,7 @@ def expert_system_page():
         
         return render_template('expert_system.html', 
                              gejala_list=expert_system.get_gejala_list(),
+                             gejala_groups=expert_system.get_gejala_groups(),
                              diagnosis=diagnosis,
                              selected_gejala=gejala_terpilih,
                              image_info=image_info)
@@ -501,6 +725,7 @@ def expert_system_page():
     
     return render_template('expert_system.html', 
                          gejala_list=expert_system.get_gejala_list(),
+                         gejala_groups=expert_system.get_gejala_groups(),
                          image_info=image_info)
 
 
@@ -531,26 +756,22 @@ def api_diagnosis():
                 # Save first (main) diagnosis
                 main_diag = diag_list[0]
                 
-                # Determine severity from CF (Certainty Factor)
-                cf = main_diag.get('cf', 0)
-                if cf >= 70:
-                    severity = 'berat'
-                elif cf >= 50:
-                    severity = 'sedang'
-                else:
-                    severity = 'ringan'
+                # Ambil severity dari diagnosis result
+                severity = main_diag.get('severity', 'sedang')
+                score = main_diag.get('score', 0)
                 
-                # Prepare diagnosis details for storage
+                # Prepare diagnosis details for storage dengan severity yang tepat
                 diagnosis_details = {
                     'nama': main_diag.get('nama', ''),
                     'deskripsi': main_diag.get('deskripsi', ''),
                     'solusi': main_diag.get('solusi', []),
-                    'cf': float(main_diag.get('cf', 0)),
-                    'gejala_teramati': gejala,
+                    'score': float(score),
+                    'gejala_teramati': main_diag.get('gejala_teramati', gejala),
                     'semua_diagnosis': [
                         {
                             'nama': d.get('nama', ''),
-                            'cf': float(d.get('cf', 0))
+                            'severity': d.get('severity', ''),
+                            'score': float(d.get('score', 0))
                         }
                         for d in diag_list
                     ]
@@ -561,10 +782,11 @@ def api_diagnosis():
                     prediction_id=prediction_id,
                     diagnosis_dict=diagnosis_details,
                     severity=severity,
-                    confidence=float(cf),
+                    confidence=float(score),
                     timestamp=datetime.datetime.utcnow()
                 )
-                print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}")
+                diagnosis['saved_diagnosis_id'] = diag_id
+                print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}, severity={severity}")
         except Exception as e:
             print(f"✗ Error saving diagnosis to database: {e}")
             import traceback

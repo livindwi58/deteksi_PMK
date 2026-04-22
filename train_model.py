@@ -10,6 +10,40 @@ import joblib
 from utils.helpers import prepare_dataset, save_model, analyze_features
 from utils.feature_extraction import FeatureExtractor
 
+
+LABEL_EXPORT_MAP = {
+    'sehat': ('normal', 0),
+    'sakit': ('defective', 1),
+}
+
+
+def build_export_dataframe(feature_matrix, labels, image_paths, feature_names):
+    """Build a CSV-ready dataframe with image names and export labels."""
+    df = pd.DataFrame(feature_matrix, columns=feature_names)
+    df['image_name'] = [os.path.basename(path) for path in image_paths]
+    df['label_name'] = [LABEL_EXPORT_MAP.get(label, (label, -1))[0] for label in labels]
+    df['label'] = [LABEL_EXPORT_MAP.get(label, (label, -1))[1] for label in labels]
+
+    export_columns = ['image_name', 'label_name', 'label'] + feature_names
+    df = df[export_columns]
+    df = df.sort_values(by=['label', 'image_name'], kind='stable').reset_index(drop=True)
+    return df
+
+
+def cleanup_legacy_feature_csvs():
+    """Remove legacy CSV exports so the features folder only contains the new files."""
+    legacy_files = [
+        'features/data_train_scaled.csv',
+        'features/data_test_scaled.csv',
+        'features/all_features.csv',
+        'features/features_healthy.csv',
+        'features/features_sick.csv',
+    ]
+
+    for file_path in legacy_files:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
 def train_knn_model(data_dir='dataset', test_size=0.2, random_state=42):
     """
     Train KNN model for PMK detection
@@ -35,8 +69,8 @@ def train_knn_model(data_dir='dataset', test_size=0.2, random_state=42):
     
     # 3. Split dataset
     print("\n3. MEMBAGI DATASET...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        features, labels_encoded, 
+    X_train, X_test, y_train, y_test, paths_train, paths_test = train_test_split(
+        features, labels_encoded, image_paths,
         test_size=test_size, 
         random_state=random_state,
         stratify=labels_encoded
@@ -44,15 +78,39 @@ def train_knn_model(data_dir='dataset', test_size=0.2, random_state=42):
     
     print(f"Training samples: {X_train.shape[0]}")
     print(f"Testing samples: {X_test.shape[0]}")
+    print(f"Feature dimensionality: {X_train.shape[1]} (Average RGB 3 + GLCM 4)")
     
-    # 4. Feature scaling
-    print("\n4. SCALING FEATURES...")
+    # 3a. Save dataset and train-test split to CSV
+    print("\n3a. MENYIMPAN DATASET DAN SPLIT TRAIN-TEST KE CSV...")
+    extractor_temp = FeatureExtractor()
+    os.makedirs('features', exist_ok=True)
+    
+    # Create DataFrames (use 7 feature names)
+    feature_names_for_export = extractor_temp.feature_names
+
+    cleanup_legacy_feature_csvs()
+
+    df_all = build_export_dataframe(features, labels, image_paths, feature_names_for_export)
+    df_all.to_csv('features/dataset.csv', index=False)
+    print(f"  Dataset penuh: {len(df_all)} sampel → features/dataset.csv")
+
+    df_train = build_export_dataframe(X_train, label_encoder.inverse_transform(y_train), paths_train, feature_names_for_export)
+    df_train.to_csv('features/data_train.csv', index=False)
+    print(f"  Data training: {len(df_train)} sampel → features/data_train.csv")
+
+    df_test = build_export_dataframe(X_test, label_encoder.inverse_transform(y_test), paths_test, feature_names_for_export)
+    df_test.to_csv('features/data_test.csv', index=False)
+    print(f"  Data testing: {len(df_test)} sampel → features/data_test.csv")
+
+    # 5. Feature scaling
+    print("\n5. SCALING FEATURES (7 features)...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # 5. Train KNN model
-    print("\n5. TRAINING KNN MODEL...")
+    # 6. Train KNN model dengan k=5 (optimized)
+    print("\n6. TRAINING KNN MODEL (k=5 - optimized)...")
+    
     knn = KNeighborsClassifier(
         n_neighbors=5,
         weights='distance',
@@ -62,8 +120,8 @@ def train_knn_model(data_dir='dataset', test_size=0.2, random_state=42):
     
     knn.fit(X_train_scaled, y_train)
     
-    # 6. Evaluate model
-    print("\n6. EVALUASI MODEL...")
+    # 7. Evaluate model
+    print("\n7. EVALUASI MODEL...")
     y_pred = knn.predict(X_test_scaled)
     accuracy = accuracy_score(y_test, y_pred)
     
@@ -90,54 +148,17 @@ def train_knn_model(data_dir='dataset', test_size=0.2, random_state=42):
     print(f"Recall: {recall:.2%}")
     print(f"F1-Score: {f1:.2%}")
     
-    # 7. Save model
-    print("\n7. MENYIMPAN MODEL...")
+    # 8. Save model
+    print("\n8. MENYIMPAN MODEL...")
     save_model(knn, scaler, label_encoder)
     
-    # 8. Save features to separate CSV files
-    print("\n8. MENYIMPAN FITUR KE CSV...")
-    extractor = FeatureExtractor()
-    os.makedirs('features', exist_ok=True)
-    
-    # Separate features by class
-    healthy_features = []
-    sick_features = []
-    
-    for feat, label in zip(features, labels):
-        if label == 'sehat':
-            healthy_features.append(feat)
-        else:
-            sick_features.append(feat)
-    
-    # Save to CSV
-    if healthy_features:
-        df_healthy = extractor.save_features_to_csv(
-            healthy_features, 
-            ['sehat'] * len(healthy_features),
-            'features/features_healthy.csv'
-        )
-        print(f"  Fitur sehat: {len(df_healthy)} sampel")
-    
-    if sick_features:
-        df_sick = extractor.save_features_to_csv(
-            sick_features, 
-            ['sakit'] * len(sick_features),
-            'features/features_sick.csv'
-        )
-        print(f"  Fitur sakit: {len(df_sick)} sampel")
-    
-    # Save all features
-    all_features_df = pd.DataFrame(features, columns=extractor.feature_names)
-    all_features_df['label'] = labels
-    all_features_df.to_csv('features/all_features.csv', index=False)
-    
     # 9. Analyze features
-    print("\n9. ANALISIS FITUR...")
+    print("\n10. ANALISIS FITUR...")
     analyze_features()
     
     # Calculate feature statistics
     print("\nRATA-RATA FITUR PER KELAS:")
-    stats = all_features_df.groupby('label').mean()
+    stats = df_all.groupby('label_name')[feature_names_for_export].mean()
     print(stats)
     
     # Save model performance

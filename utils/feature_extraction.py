@@ -2,122 +2,90 @@ import numpy as np
 import cv2
 from skimage.feature import graycomatrix, graycoprops
 import pandas as pd
+from sqlalchemy import Extract
 
 class FeatureExtractor:
     def __init__(self):
-        self.feature_names = [
-            'mean_r', 'mean_g', 'mean_b',
-            'std_r', 'std_g', 'std_b',
-            'skew_r', 'skew_g', 'skew_b',
-            'energy', 'contrast', 'correlation',
-            'homogeneity', 'dissimilarity', 'ASM'
-        ]
+        # Fitur: Average RGB (3) + GLCM (4) = 7 features total
+        self.feature_names = ['avg_red', 'avg_green', 'avg_blue', 
+                             'contrast', 'homogeneity', 'correlation', 'energy']
     
-    def color_moments(self, image):
-        """Extract color moments from RGB image
-
-        Supports masked ROI when `mask` is provided inside `image` tuple
-        (see `extract_all_features`). If `image` is a numpy array, no mask
-        is used.
+    def extract_rgb_average(self, image_rgb):
+        """Extract average values for R, G, B channels
+        
+        Parameters:
+        - image_rgb: RGB image (uint8)
+        
+        Return: list [avg_red, avg_green, avg_blue]
         """
-        moments = []
-
-        # If caller passed a tuple (image, mask) handle it; otherwise mask=None
-        if isinstance(image, tuple) and len(image) == 2:
-            img, mask = image
-        else:
-            img, mask = image, None
-
-        for i in range(3):  # For each channel (R, G, B)
-            channel = img[:, :, i]
-
-            if mask is not None:
-                mask_bool = (mask > 0)
-                vals = channel[mask_bool]
-            else:
-                vals = channel.ravel()
-
-            if vals.size == 0:
-                mean = 0.0
-                std = 0.0
-                skew = 0.0
-            else:
-                mean = np.mean(vals)
-                std = np.std(vals)
-                if std > 0:
-                    skew = np.mean((vals - mean) ** 3) / (std ** 3)
-                else:
-                    skew = 0.0
-
-            moments.extend([mean, std, skew])
-
-        return moments
+        if image_rgb is None:
+            print("[WARNING] image_rgb is None in extract_rgb_average")
+            return [0.0, 0.0, 0.0]
+        
+        try:
+            avg_red = np.mean(image_rgb[:, :, 0])
+            avg_green = np.mean(image_rgb[:, :, 1])
+            avg_blue = np.mean(image_rgb[:, :, 2])
+            return [avg_red, avg_green, avg_blue]
+        except Exception as e:
+            print(f"[ERROR] extract_rgb_average failed: {str(e)}")
+            return [0.0, 0.0, 0.0]
     
-    def glcm_features(self, image):
-        """Extract GLCM texture features.
-
-        Accepts either `image` (numpy array) or `(image, mask)` tuple.
-        If `mask` is provided, compute GLCM on cropped ROI to avoid
-        background influence.
+    def glcm_features(self, gray_image):
+        """Extract GLCM texture features (4)
+        
+        Parameters:
+        - gray_image: Grayscale image hasil threshold (uint8)
+        
+        Return: list [contrast, homogeneity, correlation, energy]
         """
-        # Unpack possible (image, mask)
-        if isinstance(image, tuple) and len(image) == 2:
-            img, mask = image
-        else:
-            img, mask = image, None
-
-        # Convert to grayscale and scale to 0-255
-        gray = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-
-        # If mask provided, crop to bounding box of mask
-        if mask is not None:
-            mask_bool = (mask > 0)
-            if mask_bool.any():
-                ys, xs = np.where(mask_bool)
-                ymin, ymax = ys.min(), ys.max()
-                xmin, xmax = xs.min(), xs.max()
-                gray_crop = gray[ymin:ymax+1, xmin:xmax+1]
-                # Use crop when it contains enough pixels
-                if gray_crop.size >= 16:
-                    gray = gray_crop
-
-        gray = gray.astype(np.uint8)
-
-        # Calculate GLCM
-        glcm = graycomatrix(gray, 
-                           distances=[1, 2, 3],
-                           angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
-                           levels=256,
-                           symmetric=True,
-                           normed=True)
-
-        # Extract properties and average across distances and angles
-        features = []
-        for prop in ['energy', 'contrast', 'correlation', 'homogeneity', 'dissimilarity', 'ASM']:
-            prop_values = graycoprops(glcm, prop)
-            features.append(np.mean(prop_values))
-
-        return features
+        # Validate input
+        if gray_image is None:
+            print("[WARNING] gray_image is None in glcm_features")
+            return [0.0, 0.0, 0.0, 0.0]
+        
+        try:
+            gray = gray_image.astype(np.uint8)
+            
+            glcm = graycomatrix(gray, distances=[1, 2, 3],
+                               angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
+                               levels=256, symmetric=True, normed=True)
+            
+            features = []
+            for prop in ['contrast', 'homogeneity', 'correlation', 'energy']:
+                prop_values = graycoprops(glcm, prop)
+                features.append(np.mean(prop_values))
+            
+            return features
+        except Exception as e:
+            print(f"[ERROR] glcm_features failed: {str(e)}")
+            return [0.0, 0.0, 0.0, 0.0]
     
-    def extract_all_features(self, image, mask=None):
-        """Extract all features: color moments + GLCM.
-
-        `image` is expected to be an RGB array normalized to 0..1. If a
-        `mask` is provided it will be used by subroutines; alternatively
-        a tuple `(image, mask)` may be passed in `image`.
+    def extract_all_features(self, image_rgb, gray_processed):
+        """Extract 7 features: Average RGB (3) + GLCM (4)
+        
+        Parameters:
+        - image_rgb: RGB image from preprocessing pipeline (uint8)
+        - gray_processed: Grayscale hasil threshold dari preprocessing pipeline (uint8)
+        
+        Return: list of 7 features
         """
-        # Allow either passing mask separately or embedding into image tuple
-        if mask is not None:
-            img_for_color = (image, mask)
-            img_for_glcm = (image, mask)
-        else:
-            img_for_color = image
-            img_for_glcm = image
-
-        color_features = self.color_moments(img_for_color)
-        texture_features = self.glcm_features(img_for_glcm)
-
-        all_features = color_features + texture_features
+        # Validate inputs
+        if image_rgb is None:
+            print("[ERROR] image_rgb is None in extract_all_features")
+            return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        if gray_processed is None:
+            print("[ERROR] gray_processed is None in extract_all_features")
+            return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        # Extract average RGB values (3)
+        rgb_features = self.extract_rgb_average(image_rgb)
+        
+        # Extract GLCM texture features (4)
+        glcm_features_list = self.glcm_features(gray_processed)
+        
+        all_features = rgb_features + glcm_features_list
+        
         return all_features
     
     def save_features_to_csv(self, features_list, labels, filename):

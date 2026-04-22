@@ -36,7 +36,6 @@
                                     {{ image_info.prediction|upper }}
                                 </span>
                             </p>
-                            <p class="mb-0"><strong>Tingkat Keyakinan:</strong> {{ "%.2f"|format(image_info.confidence) }}%</p>
                         </div>
                         <!-- <div class="col-md-4 text-center">
                             <i class="fas fa-arrow-right fa-2x text-success"></i>
@@ -52,37 +51,61 @@
                         <h5 class="alert-heading mb-3">
                             <i class="fas fa-clipboard-check me-2"></i>Hasil Diagnosis
                         </h5>
-                        
+
                         {% if diagnosis.status == 'terdiagnosis' %}
+                            <div class="alert alert-success mb-3">
+                                <strong>Status:</strong> Positif PMK
+                                <div class="mt-2">
+                                    Diagnosis utama akan ditampilkan di bawah sebagai bentuk PMK yang paling sesuai.
+                                </div>
+                            </div>
+
                             {% for diag in diagnosis.diagnosis %}
-                                <div class="card mb-3 {% if loop.first %}border-success{% endif %}">
-                                    <div class="card-header {% if loop.first %}bg-success text-white{% endif %}">
+                                <div class="card mb-3 {% if loop.first %}border-success border-3{% endif %}">
+                                    <div class="card-header {% if loop.first %}bg-success text-white{% else %}bg-light{% endif %}">
                                         <h5 class="mb-0">
                                             <i class="fas fa-diagnoses me-2"></i>{{ diag.nama }}
                                             {% if loop.first %}
-                                                <span class="badge bg-light text-success float-end">Diagnosis Utama</span>
+                                                <span class="badge bg-light text-success float-end">{{ diag.persentase|default(diag.score * 100)|round(2) }}%</span>
                                             {% endif %}
                                         </h5>
                                     </div>
                                     <div class="card-body">
-                                        <!-- Certainty Factor -->
                                         <div class="mb-3">
-                                            <label class="fw-bold">Tingkat Keyakinan:</label>
-                                            <div class="progress">
-                                                <div class="progress-bar {% if loop.first %}bg-success{% else %}bg-info{% endif %}" 
-                                                     style="width: 0%;" data-width="{{ diag.cf|round(1) }}">
-                                                    {{ "%.1f"|format(diag.cf) }}%
-                                                </div>
+                                            <label class="fw-bold">Kategori Penyakit:</label>
+                                            <div class="mt-2">
+                                                {% if diag.severity == 'oral' %}
+                                                    <span class="badge bg-info fs-6">PMK ORAL</span>
+                                                {% elif diag.severity == 'podal' %}
+                                                    <span class="badge bg-warning text-dark fs-6">PMK PODAL</span>
+                                                {% elif diag.severity == 'laktasi' %}
+                                                    <span class="badge bg-primary fs-6">PMK LAKTASI</span>
+                                                {% elif diag.severity == 'juvenil' %}
+                                                    <span class="badge bg-danger fs-6">PMK JUVENIL</span>
+                                                {% elif diag.severity == 'akut umum' %}
+                                                    <span class="badge bg-dark fs-6">PMK AKUT UMUM</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary fs-6">PMK</span>
+                                                {% endif %}
                                             </div>
                                         </div>
-                                        
-                                        <!-- Deskripsi -->
+
                                         <div class="mb-3">
                                             <label class="fw-bold">Deskripsi:</label>
                                             <p class="mb-0">{{ diag.deskripsi }}</p>
                                         </div>
-                                        
-                                        <!-- Solusi -->
+
+                                        {% if diag.bukti_aturan %}
+                                        <div class="mb-3">
+                                            <label class="fw-bold">Bukti Aturan yang Cocok:</label>
+                                            <ul class="mb-0 mt-2">
+                                                {% for bukti in diag.bukti_aturan %}
+                                                    <li>{{ bukti.kode }} - {{ bukti.deskripsi }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                        {% endif %}
+
                                         <div class="mb-0">
                                             <label class="fw-bold">Rekomendasi Penanganan:</label>
                                             <ol class="mb-0">
@@ -94,8 +117,7 @@
                                     </div>
                                 </div>
                             {% endfor %}
-                            
-                            <!-- Gejala yang Diamati -->
+
                             <div class="card mt-3">
                                 <div class="card-header bg-secondary text-white">
                                     <h5 class="mb-0"><i class="fas fa-list me-2"></i>Gejala yang Diamati</h5>
@@ -111,15 +133,12 @@
                                     </ul>
                                 </div>
                             </div>
-                            
-                            <!-- Catatan Penting -->
+
                             <div class="alert alert-warning mt-3">
                                 <i class="fas fa-exclamation-triangle me-2"></i>
-                                <strong>Catatan:</strong> Hasil diagnosis ini bersifat rekomendasi awal. 
-                                Untuk penanganan lebih lanjut, konsultasikan dengan dokter hewan.
+                                <strong>Penanganan Awal:</strong> isolasi sapi yang terindikasi PMK, sediakan pakan lunak dan air minum cukup, jaga kebersihan kandang, dan hubungi dokter hewan secepatnya.
                             </div>
-                            
-                            <!-- Action Buttons -->
+
                             <div class="mt-4 text-center">
                                 <button class="btn btn-success" onclick="window.print()">
                                     <i class="fas fa-print me-2"></i>Cetak Hasil
@@ -131,7 +150,7 @@
                                     <i class="fas fa-home me-2"></i>Kembali ke Home
                                 </a>
                             </div>
-                            
+
                         {% else %}
                             <div class="alert alert-warning">
                                 <i class="fas fa-exclamation-circle me-2"></i>
@@ -144,7 +163,7 @@
                             </div>
                         {% endif %}
                     </div>
-                    
+
                 {% else %}
                     <!-- Form Gejala -->
                     <form method="POST" action="{{ url_for('expert_system_page') }}" id="expertForm">
@@ -153,125 +172,36 @@
                             
                             <!-- Kategori Gejala -->
                             <div class="accordion" id="gejalaAccordion">
-                                <!-- Gejala Umum -->
+                                {% for group_key, group in gejala_groups.items() %}
                                 <div class="accordion-item">
-                                    <h2 class="accordion-header" id="headingUmum">
-                                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUmum">
-                                            <i class="fas fa-thermometer-half me-2"></i>Gejala Umum
+                                    <h2 class="accordion-header" id="heading{{ group_key|capitalize }}">
+                                        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ group_key|capitalize }}">
+                                            {% if group_key == 'umum' %}<i class="fas fa-thermometer-half me-2"></i>{% elif group_key == 'mulut' %}<i class="fas fa-tooth me-2"></i>{% elif group_key == 'kaki' %}<i class="fas fa-shoe-prints me-2"></i>{% elif group_key == 'ambing' %}<i class="fas fa-cow me-2"></i>{% else %}<i class="fas fa-exclamation-triangle me-2"></i>{% endif %}
+                                            {{ group.title }}
                                         </button>
                                     </h2>
-                                    <div id="collapseUmum" class="accordion-collapse collapse show" data-bs-parent="#gejalaAccordion">
+                                    <div id="collapse{{ group_key|capitalize }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#gejalaAccordion">
                                         <div class="accordion-body">
                                             <div class="row">
-                                                {% for kode, nama in gejala_list.items() %}
-                                                    {% if kode in ['G01', 'G02', 'G03', 'G04', 'G05'] %}
-                                                    <div class="col-md-6 mb-2">
-                                                        <div class="form-check">
-                                                            <input class="form-check-input" type="checkbox" 
-                                                                   name="gejala" value="{{ kode }}" 
-                                                                   id="gejala{{ kode }}"
-                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
-                                                            <label class="form-check-label" for="gejala{{ kode }}">
-                                                                <strong>{{ kode }}:</strong> {{ nama }}
-                                                            </label>
-                                                        </div>
+                                                {% for kode in group.codes %}
+                                                <div class="col-md-6 mb-2">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox"
+                                                               name="gejala" value="{{ kode }}"
+                                                               id="gejala{{ kode }}"
+                                                               {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
+                                                        <label class="form-check-label" for="gejala{{ kode }}">
+                                                            <strong>{{ kode }}:</strong> {{ gejala_list[kode] }}
+                                                        </label>
                                                     </div>
-                                                    {% endif %}
+                                                </div>
                                                 {% endfor %}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
+                                {% endfor %}
                                 
-                                <!-- Gejala Mulut -->
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header" id="headingMulut">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMulut">
-                                            <i class="fas fa-mouth me-2"></i>Gejala Mulut
-                                        </button>
-                                    </h2>
-                                    <div id="collapseMulut" class="accordion-collapse collapse" data-bs-parent="#gejalaAccordion">
-                                        <div class="accordion-body">
-                                            <div class="row">
-                                                {% for kode, nama in gejala_list.items() %}
-                                                    {% if kode in ['G06', 'G07', 'G08', 'G09', 'G10'] %}
-                                                    <div class="col-md-6 mb-2">
-                                                        <div class="form-check">
-                                                            <input class="form-check-input" type="checkbox" 
-                                                                   name="gejala" value="{{ kode }}" 
-                                                                   id="gejala{{ kode }}"
-                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
-                                                            <label class="form-check-label" for="gejala{{ kode }}">
-                                                                <strong>{{ kode }}:</strong> {{ nama }}
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Gejala Kaki -->
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header" id="headingKaki">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseKaki">
-                                            <i class="fas fa-paw me-2"></i>Gejala Kaki
-                                        </button>
-                                    </h2>
-                                    <div id="collapseKaki" class="accordion-collapse collapse" data-bs-parent="#gejalaAccordion">
-                                        <div class="accordion-body">
-                                            <div class="row">
-                                                {% for kode, nama in gejala_list.items() %}
-                                                    {% if kode in ['G11', 'G12', 'G13', 'G14', 'G15'] %}
-                                                    <div class="col-md-6 mb-2">
-                                                        <div class="form-check">
-                                                            <input class="form-check-input" type="checkbox" 
-                                                                   name="gejala" value="{{ kode }}" 
-                                                                   id="gejala{{ kode }}"
-                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
-                                                            <label class="form-check-label" for="gejala{{ kode }}">
-                                                                <strong>{{ kode }}:</strong> {{ nama }}
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Gejala Ambing -->
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header" id="headingAmbing">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAmbing">
-                                            <i class="fas fa-tint me-2"></i>Gejala Ambing
-                                        </button>
-                                    </h2>
-                                    <div id="collapseAmbing" class="accordion-collapse collapse" data-bs-parent="#gejalaAccordion">
-                                        <div class="accordion-body">
-                                            <div class="row">
-                                                {% for kode, nama in gejala_list.items() %}
-                                                    {% if kode in ['G16', 'G17', 'G18', 'G19', 'G20'] %}
-                                                    <div class="col-md-6 mb-2">
-                                                        <div class="form-check">
-                                                            <input class="form-check-input" type="checkbox" 
-                                                                   name="gejala" value="{{ kode }}" 
-                                                                   id="gejala{{ kode }}"
-                                                                   {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
-                                                            <label class="form-check-label" for="gejala{{ kode }}">
-                                                                <strong>{{ kode }}:</strong> {{ nama }}
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                         
@@ -307,9 +237,9 @@
             <div class="card-body">
                 <p>Sistem pakar ini menggunakan metode <strong>Forward Chaining</strong> untuk mendiagnosis PMK pada sapi berdasarkan gejala yang diamati.</p>
                 <ul class="mb-0">
-                    <li>Total gejala: 20 gejala</li>
-                    <li>Total aturan: 10 aturan</li>
-                    <li>3 tingkat keparahan: Ringan, Sedang, Berat</li>
+                    <li>Total gejala: {{ gejala_list|length }} gejala</li>
+                    <li>Total aturan: 33 aturan</li>
+                    <li>Fokus hasil: status positif PMK dan penanganan awal</li>
                 </ul>
             </div>
         </div>
@@ -341,6 +271,29 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Simpan predictions.id ke localStorage agar riwayat deteksi hanya menampilkan data terkait
+    (function() {
+        const savedPredictionId = Number('{{ diagnosis.saved_prediction_id if diagnosis and diagnosis.saved_prediction_id else 0 }}');
+        const storageKey = 'pmk_predictions_ids';
+        let storedIds = [];
+
+        if (savedPredictionId <= 0) {
+            return;
+        }
+
+        try {
+            storedIds = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            if (!Array.isArray(storedIds)) storedIds = [];
+        } catch (e) {
+            storedIds = [];
+        }
+
+        if (!storedIds.includes(savedPredictionId)) {
+            storedIds.unshift(savedPredictionId);
+            localStorage.setItem(storageKey, JSON.stringify(storedIds));
+        }
+    })();
+
     // Reset button
     document.querySelector('button[type="reset"]')?.addEventListener('click', function(e) {
         e.preventDefault();
@@ -353,8 +306,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Unselect All button
-    document.getElementById('unselectAll')?.addEventListener('click', function() {
-        document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.getElementById('unselectAll')?.addEventListener('click', function() { 
+         document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
     });
 
     // Auto scroll to hasil diagnosis

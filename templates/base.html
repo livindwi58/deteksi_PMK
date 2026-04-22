@@ -171,6 +171,11 @@
                             <i class="fas fa-history me-1"></i>Riwayat Deteksi
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'expert_system_page' %}active{% endif %}" href="{{ url_for('expert_system_page') }}">
+                            <i class="fas fa-brain me-1"></i>Sistem Pakar
+                        </a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -209,19 +214,11 @@
                     <ul class="list-unstyled">
                             <li><a href="{{ url_for('index') }}" class="text-white">Home</a></li>
                             <li><a href="{{ url_for('riwayat_deteksi') }}" class="text-white">Riwayat Deteksi</a></li>
+                            <li><a href="{{ url_for('expert_system_page') }}" class="text-white">Sistem Pakar</a></li>
                     </ul>
-                </div>
-                <div class="col-md-3">
-                    <h5>Kontak</h5>
-                    <ul class="list-unstyled">
-                        <li><i class="fas fa-envelope me-2"></i>support@deteksipmk.id</li>
-                        <li><i class="fas fa-phone me-2"></i>+62 123 4567 890</li>
-                    </ul>
-                </div>
-            </div>
             <hr class="bg-white">
-            <div class="text-center">
-                <p class="mb-0">&copy; 2024 Sistem Deteksi PMK. All rights reserved.</p>
+            <div class="text-right">
+                <p class="mb-0">&copy; 2026 Sistem Deteksi PMK. All rights reserved.</p>
             </div>
         </div>
     </footer>
@@ -234,12 +231,19 @@
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     
     <script>
+  
     document.addEventListener('DOMContentLoaded', function() {
+        
+        if (performance.navigation.type === 1) {
+            // User reload halaman - redirect ke home
+            window.location.replace('/');
+            return;
+        }
+        // Animate progress bars
         document.querySelectorAll('.progress-bar[data-width]').forEach(function(el) {
             var w = parseFloat(el.getAttribute('data-width'));
             if (!isNaN(w)) {
                 el.style.width = w + '%';
-                // if element has only whitespace, set text to formatted percent
                 if (!el.textContent.trim()) el.textContent = w.toFixed(1) + '%';
             }
         });

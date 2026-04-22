@@ -8,9 +8,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import joblib
 
-from utils.preprocessing import preprocess_image
+from utils.preprocessing import preprocess_pipeline
 from utils.feature_extraction import FeatureExtractor
-from utils.helpers import load_model
+from utils.helpers import load_model, estimate_prediction_confidence
 
 class PMKDetectorApp:
     def __init__(self, root):
@@ -211,11 +211,11 @@ class PMKDetectorApp:
             self.status_label.config(text="Status: Memproses...")
             self.root.update()
             
-            # 1. Preprocess image (returns normalized, resized, mask)
-            img_preprocessed, img_original, mask = preprocess_image(self.image_path)
+            # 1. Preprocess image (returns RGB image and grayscale equalized)
+            img_rgb, gray_processed = preprocess_pipeline(self.image_path)
 
-            # 2. Extract features (pass mask when available)
-            self.features = self.extractor.extract_all_features(img_preprocessed, mask)
+            # 2. Extract features
+            self.features = self.extractor.extract_all_features(img_rgb, gray_processed)
             
             # 3. Scale features
             features_scaled = self.scaler.transform([self.features])
@@ -225,8 +225,11 @@ class PMKDetectorApp:
             self.prediction = self.label_encoder.inverse_transform([prediction_encoded])[0]
             
             # 5. Get prediction probabilities
-            probabilities = self.model.predict_proba(features_scaled)[0]
-            self.confidence = max(probabilities) * 100
+            confidence = estimate_prediction_confidence(self.model, features_scaled)
+            if confidence is None:
+                probabilities = self.model.predict_proba(features_scaled)[0]
+                confidence = max(probabilities) * 100
+            self.confidence = confidence
             
             # 6. Display results
             self.display_results()
@@ -322,8 +325,22 @@ class PMKDetectorApp:
     def show_statistics(self):
         """Show feature statistics"""
         try:
-            if os.path.exists('features/all_features.csv'):
-                df = pd.read_csv('features/all_features.csv')
+            dataset_path = 'features/dataset.csv'
+            legacy_path = 'features/all_features.csv'
+
+            if os.path.exists(dataset_path):
+                df = pd.read_csv(dataset_path)
+            elif os.path.exists(legacy_path):
+                df = pd.read_csv(legacy_path)
+            else:
+                df = None
+
+            if df is not None:
+                label_column = 'label_name' if 'label_name' in df.columns else 'label'
+                feature_columns = [feature for feature in self.extractor.feature_names if feature in df.columns]
+                if not feature_columns:
+                    messagebox.showinfo("Info", "Kolom fitur tidak ditemukan pada CSV statistik.")
+                    return
                 
                 # Create statistics window
                 stats_window = tk.Toplevel(self.root)
@@ -335,19 +352,24 @@ class PMKDetectorApp:
                 text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
                 
                 # Calculate statistics
-                stats = df.groupby('label').agg(['mean', 'std', 'min', 'max'])
+                stats = df.groupby(label_column)[feature_columns].agg(['mean', 'std', 'min', 'max'])
                 
                 # Format output
                 output = "STATISTIK FITUR PER KELAS\n"
                 output += "=" * 60 + "\n\n"
                 
-                for label in ['sehat', 'sakit']:
+                if label_column == 'label_name':
+                    class_order = ['normal', 'defective']
+                else:
+                    class_order = ['sehat', 'sakit']
+
+                for label in class_order:
                     output += f"KELAS: {label.upper()}\n"
                     output += "-" * 40 + "\n"
                     
                     if label in stats.index:
                         label_stats = stats.loc[label]
-                        for feature in self.extractor.feature_names:
+                        for feature in feature_columns:
                             if feature in label_stats:
                                 mean = label_stats[feature]['mean']
                                 std = label_stats[feature]['std']
@@ -359,10 +381,13 @@ class PMKDetectorApp:
                 output += "PERBANDINGAN RATA-RATA\n"
                 output += "-" * 40 + "\n"
                 
-                if 'sehat' in stats.index and 'sakit' in stats.index:
-                    for feature in self.extractor.feature_names:
-                        sehat_mean = stats.loc['sehat', feature]['mean']
-                        sakit_mean = stats.loc['sakit', feature]['mean']
+                healthy_label = 'normal' if label_column == 'label_name' else 'sehat'
+                sick_label = 'defective' if label_column == 'label_name' else 'sakit'
+
+                if healthy_label in stats.index and sick_label in stats.index:
+                    for feature in feature_columns:
+                        sehat_mean = stats.loc[healthy_label, feature]['mean']
+                        sakit_mean = stats.loc[sick_label, feature]['mean']
                         diff = sakit_mean - sehat_mean
                         output += f"{feature:15}: {sehat_mean:8.4f} → {sakit_mean:8.4f} ({diff:+.4f})\n"
                 

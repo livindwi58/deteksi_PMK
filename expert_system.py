@@ -1,144 +1,73 @@
 import os
+from collections import OrderedDict, defaultdict
 
-# Basis pengetahuan untuk penyakit PMK pada sapi
+DISEASE_ALIAS_MAP = {
+    'P01': {'ORAL', 'ORAL_KUAT', 'P01'},
+    'P02': {'PODAL', 'PODAL_KUAT', 'P02'},
+    'P03': {'LAKTASI', 'LAKTASI_KUAT', 'P03'},
+    'P04': {'JUVENIL', 'JUVENIL_KUAT', 'P04'},
+    'P05': {'AKUT_GENERAL', 'AKUT_GENERAL_KUAT', 'P05'},
+}
+
+DEFAULT_GEJALA_GROUP_TITLES = OrderedDict([
+    ('umum', 'Gejala Umum / Sistemik'),
+    ('mulut', 'Gejala Mulut / Oral'),
+    ('kaki', 'Gejala Kaki / Kuku'),
+    ('ambing', 'Gejala Ambing / Laktasi'),
+    ('berat', 'Gejala Berat / Khusus'),
+])
+
+
 class KnowledgeBase:
     def __init__(self):
-        self.gejala = {
-            # Gejala Umum
-            'G01': 'Demam tinggi (>40°C)',
-            'G02': 'Sapi terlihat lesu dan tidak nafsu makan',
-            'G03': 'Produksi susu menurun drastis',
-            'G04': 'Sapi pincak atau sulit berjalan',
-            'G05': 'Sapi lebih sering berbaring',
-            
-            # Gejala Mulut
-            'G06': 'Lepuh pada lidah dan gusi',
-            'G07': 'Luka terbuka pada mulut',
-            'G08': 'Air liur berlebihan (hipersalivasi)',
-            'G09': 'Sulit mengunyah makanan',
-            'G10': 'Bau mulut tidak sedap',
-            
-            # Gejala Kaki
-            'G11': 'Lepuh pada sela-sela kuku',
-            'G12': 'Pembengkakan pada kaki',
-            'G13': 'Luka pada kuku',
-            'G14': 'Kuku terlepas (kasus berat)',
-            'G15': 'Kaki terasa hangat saat disentuh',
-            
-            # Gejala Ambing
-            'G16': 'Lepuh pada ambing',
-            'G17': 'Luka pada puting susu',
-            'G18': 'Radang ambing (mastitis)',
-            'G19': 'Warna ambing kemerahan',
-            'G20': 'Nyeri saat pemerahan'
-        }
-        
-        self.penyakit = {
-            'P01': {
-                'nama': 'PMK Ringan',
-                'deskripsi': 'Tahap awal infeksi PMK dengan gejala ringan',
-                'solusi': [
-                    'Isolasi sapi yang terinfeksi',
-                    'Berikan pakan lunak yang mudah dikonsumsi',
-                    'Bersihkan dan obati luka dengan antiseptik',
-                    'Konsultasikan dengan dokter hewan',
-                    'Berikan vitamin untuk meningkatkan daya tahan tubuh'
-                ]
-            },
-            'P02': {
-                'nama': 'PMK Sedang',
-                'deskripsi': 'Infeksi PMK dengan gejala yang jelas dan meluas',
-                'solusi': [
-                    'Isolasi total sapi yang terinfeksi',
-                    'Lakukan desinfeksi kandang secara menyeluruh',
-                    'Pengobatan simtomatis untuk demam dan nyeri',
-                    'Perawatan intensif pada luka di mulut dan kaki',
-                    'Vaksinasi untuk sapi yang sehat di sekitar',
-                    'Lapor ke Dinas Peternakan setempat'
-                ]
-            },
-            'P03': {
-                'nama': 'PMK Berat dengan Komplikasi',
-                'deskripsi': 'Infeksi PMK lanjut dengan komplikasi pada kaki dan ambing',
-                'solusi': [
-                    'Perawatan intensif oleh dokter hewan',
-                    'Antibiotik untuk mencegah infeksi sekunder',
-                    'Terapi cairan dan nutrisi jika tidak mau makan/minum',
-                    'Perawatan luka profesional',
-                    'Karantina ketat',
-                    'Pelaporan wajib ke otoritas veteriner',
-                    'Pembersihan dan desinfeksi total lingkungan'
-                ]
-            }
-        }
-        
-        self.aturan = [
-            # Aturan untuk PMK Ringan
-            {
-                'kode': 'R01',
-                'gejala': ['G01', 'G02', 'G03'],
-                'penyakit': 'P01',
-                'cf': 0.6
-            },
-            {
-                'kode': 'R02',
-                'gejala': ['G01', 'G05', 'G08'],
-                'penyakit': 'P01',
-                'cf': 0.7
-            },
-            {
-                'kode': 'R03',
-                'gejala': ['G02', 'G04', 'G06'],
-                'penyakit': 'P01',
-                'cf': 0.8
-            },
-            
-            # Aturan untuk PMK Sedang
-            {
-                'kode': 'R04',
-                'gejala': ['G01', 'G06', 'G07', 'G08'],
-                'penyakit': 'P02',
-                'cf': 0.8
-            },
-            {
-                'kode': 'R05',
-                'gejala': ['G01', 'G11', 'G12', 'G15'],
-                'penyakit': 'P02',
-                'cf': 0.85
-            },
-            {
-                'kode': 'R06',
-                'gejala': ['G02', 'G06', 'G07', 'G09', 'G11'],
-                'penyakit': 'P02',
-                'cf': 0.9
-            },
-            
-            # Aturan untuk PMK Berat
-            {
-                'kode': 'R07',
-                'gejala': ['G01', 'G07', 'G11', 'G13', 'G14'],
-                'penyakit': 'P03',
-                'cf': 0.9
-            },
-            {
-                'kode': 'R08',
-                'gejala': ['G01', 'G02', 'G08', 'G11', 'G12', 'G14'],
-                'penyakit': 'P03',
-                'cf': 0.95
-            },
-            {
-                'kode': 'R09',
-                'gejala': ['G01', 'G08', 'G13', 'G16', 'G17', 'G19'],
-                'penyakit': 'P03',
-                'cf': 0.85
-            },
-            {
-                'kode': 'R10',
-                'gejala': ['G02', 'G09', 'G14', 'G18', 'G20'],
-                'penyakit': 'P03',
-                'cf': 0.9
-            }
-        ]
+        self.gejala = {}
+        self.penyakit = {}
+        self.aturan = []
+        self.gejala_groups = self._empty_groups()
+
+        loaded = self._load_from_database()
+        if not loaded:
+            self._set_fallback_knowledge()
+
+    def _empty_groups(self):
+        return OrderedDict(
+            (group_code, {'title': group_title, 'codes': []})
+            for group_code, group_title in DEFAULT_GEJALA_GROUP_TITLES.items()
+        )
+
+    def _set_fallback_knowledge(self):
+        self.gejala = {}
+        self.penyakit = {}
+        self.aturan = []
+        self.gejala_groups = self._empty_groups()
+
+    def _load_from_database(self):
+        try:
+            from utils.mysql_db import get_expert_knowledge_mysql
+
+            knowledge = get_expert_knowledge_mysql()
+            if not knowledge:
+                return False
+
+            gejala = knowledge.get('gejala') or {}
+            penyakit = knowledge.get('penyakit') or {}
+            aturan = knowledge.get('aturan') or []
+            gejala_groups = knowledge.get('gejala_groups')
+
+            if gejala and penyakit and aturan:
+                self.gejala = gejala
+                self.penyakit = penyakit
+                self.aturan = aturan
+                if gejala_groups:
+                    self.gejala_groups = gejala_groups
+                print('[EXPERT_SYSTEM] Knowledge base loaded from MySQL.')
+                return True
+        except Exception as e:
+            print(f"[EXPERT_SYSTEM] Using fallback knowledge base (DB unavailable): {e}")
+        return False
+
+    def get_gejala_groups(self):
+        return self.gejala_groups
 
 
 class ForwardChaining:
@@ -156,73 +85,187 @@ class ForwardChaining:
         """Menambahkan gejala yang teramati"""
         for gejala in gejala_list:
             self.fakta.add(gejala)
-            
-    def hitung_cf_combined(self, cf1, cf2):
-        """Menghitung kombinasi Certainty Factor"""
-        return cf1 + cf2 * (1 - cf1)
     
     def inferensi(self):
-        """Melakukan inferensi forward chaining"""
+        """Mencocokkan gejala dengan aturan (exact + partial matching)."""
         self.hasil = {}
-        fakta_baru = True
-        
-        while fakta_baru:
-            fakta_baru = False
-            
-            for aturan in self.kb.aturan:
-                # Cek apakah semua gejala dalam aturan ada di fakta
-                gejala_terpenuhi = all(g in self.fakta for g in aturan['gejala'])
-                
-                if gejala_terpenuhi:
-                    penyakit = aturan['penyakit']
-                    cf = aturan['cf']
-                    
-                    if penyakit not in self.hasil:
-                        self.hasil[penyakit] = cf
-                        fakta_baru = True
-                    else:
-                        # Kombinasikan CF jika penyakit sudah ada
-                        cf_lama = self.hasil[penyakit]
-                        cf_baru = self.hitung_cf_combined(cf_lama, cf)
-                        if cf_baru > cf_lama:
-                            self.hasil[penyakit] = cf_baru
-                            fakta_baru = True
-        
+        self.matched_rules = []
+        known_facts = set(self.fakta)
+        if not known_facts:
+            self.disease_evidence = defaultdict(list)
+            return self.hasil
+
+        disease_stats = {}
+        disease_evidence = defaultdict(list)
+
+        disease_rule_stats = {}
+        for aturan in self.kb.aturan:
+            hasil = aturan['hasil']
+            if hasil in self.kb.penyakit:
+                disease_rule_stats.setdefault(hasil, {'total_rules': 0, 'max_rule_size': 0})
+                disease_rule_stats[hasil]['total_rules'] += 1
+                disease_rule_stats[hasil]['max_rule_size'] = max(
+                    disease_rule_stats[hasil]['max_rule_size'],
+                    len(aturan['gejala'])
+                )
+
+        for aturan in self.kb.aturan:
+            hasil = aturan['hasil']
+            if hasil not in self.kb.penyakit:
+                continue
+
+            rule_gejala = aturan.get('gejala', [])
+            if not rule_gejala:
+                continue
+
+            matched_gejala = [g for g in rule_gejala if g in known_facts]
+            matched_count = len(matched_gejala)
+            total_count = len(rule_gejala)
+            coverage = matched_count / total_count
+
+            if matched_count == 0:
+                continue
+
+            disease_stats.setdefault(
+                hasil,
+                {
+                    'matched_rules': 0,
+                    'exact_rules': 0,
+                    'best_coverage': 0.0,
+                    'coverage_sum': 0.0,
+                    'best_matched_count': 0,
+                },
+            )
+
+            disease_stats[hasil]['matched_rules'] += 1
+            disease_stats[hasil]['coverage_sum'] += coverage
+            disease_stats[hasil]['best_coverage'] = max(disease_stats[hasil]['best_coverage'], coverage)
+            disease_stats[hasil]['best_matched_count'] = max(disease_stats[hasil]['best_matched_count'], matched_count)
+
+            if coverage >= 1.0:
+                disease_stats[hasil]['exact_rules'] += 1
+
+            rule_obj = {
+                'kode': aturan['kode'],
+                'hasil': hasil,
+                'gejala': rule_gejala,
+                'gejala_cocok': matched_gejala,
+                'matched_count': matched_count,
+                'total_count': total_count,
+                'coverage': coverage,
+                'rule_size': total_count,
+                'deskripsi': aturan.get('deskripsi', ''),
+            }
+
+            if coverage >= 1.0:
+                self.matched_rules.append(rule_obj)
+
+            disease_evidence[hasil].append(rule_obj)
+
+        min_score_threshold = 0.35
+        for penyakit, stats in disease_stats.items():
+            total_rules = disease_rule_stats.get(penyakit, {}).get('total_rules', 1) or 1
+            matched_rules = stats['matched_rules']
+            avg_coverage = stats['coverage_sum'] / matched_rules if matched_rules else 0.0
+            support_ratio = matched_rules / total_rules
+            evidence_strength = min(stats['best_matched_count'] / 4.0, 1.0)
+            exact_bonus = 0.10 if stats['exact_rules'] > 0 else 0.0
+
+            combined_score = (
+                (stats['best_coverage'] * 0.50)
+                + (avg_coverage * 0.25)
+                + (support_ratio * 0.15)
+                + (evidence_strength * 0.10)
+                + exact_bonus
+            )
+            combined_score = min(combined_score, 0.99)
+
+            if combined_score >= min_score_threshold:
+                self.hasil[penyakit] = combined_score
+
+        self.disease_evidence = disease_evidence
+
         return self.hasil
     
     def get_diagnosis(self):
-        """Mendapatkan hasil diagnosis"""
+        """Mengambil hasil diagnosis yang paling sesuai."""
+        if not self.kb.aturan:
+            return {
+                'status': 'Belum terdeteksi',
+                'message': 'Data aturan sistem pakar belum tersedia di database. Silakan setup/seed database terlebih dahulu.'
+            }
+
         hasil_inferensi = self.inferensi()
         
         if not hasil_inferensi:
             return {
-                'status': 'Tidak terdiagnosis',
-                'message': 'Gejala yang diberikan tidak cukup untuk mendiagnosis PMK'
+                'status': 'Belum terdeteksi',
+                'message': 'Gejala yang dipilih masih belum cukup untuk menentukan PMK.'
             }
         
-        # Urutkan hasil berdasarkan CF tertinggi
+        # Urutkan hasil dari yang paling cocok
         hasil_urut = sorted(hasil_inferensi.items(), key=lambda x: x[1], reverse=True)
         
+        # Pemetaan tingkat keparahan
+        severity_map = {
+            'P01': 'oral',
+            'P02': 'podal',
+            'P03': 'laktasi',
+            'P04': 'juvenil',
+            'P05': 'akut umum'
+        }
+        
         diagnosis = []
-        for kode_penyakit, cf in hasil_urut:
+        for kode_penyakit, score in hasil_urut:
             penyakit = self.kb.penyakit[kode_penyakit]
+            relevant_aliases = DISEASE_ALIAS_MAP.get(kode_penyakit, {kode_penyakit})
+            evidence_rules = [rule for rule in self.matched_rules if rule['hasil'] in relevant_aliases]
+
+            if not evidence_rules:
+                all_evidence = list(self.disease_evidence.get(kode_penyakit, []))
+                all_evidence.sort(key=lambda r: (r.get('coverage', 0.0), r.get('matched_count', 0)), reverse=True)
+                evidence_rules = all_evidence[:3]
+
             diagnosis.append({
                 'kode': kode_penyakit,
+                'severity': severity_map.get(kode_penyakit, 'unknown'),
                 'nama': penyakit['nama'],
                 'deskripsi': penyakit['deskripsi'],
                 'solusi': penyakit['solusi'],
-                'cf': round(cf * 100, 2)
+                'score': score,
+                'gejala_teramati': [g for g in self.fakta if g in self.kb.gejala],
+                'bukti_aturan': evidence_rules,
+                'jumlah_bukti': len(evidence_rules),
+                'semua_diagnosis': diagnosis  # Will be populated after all diagnosis generated
             })
+        
+        filtered_diagnosis = diagnosis[:1]
+
+        # Isi daftar hasil untuk ditampilkan ke pengguna
+        for diag in filtered_diagnosis:
+            diag['persentase'] = round(float(diag['score']) * 100.0, 2)
+            diag['semua_diagnosis'] = [
+                {
+                    'nama': d['nama'],
+                    'severity': d['severity'],
+                    'score': d['score']
+                }
+                for d in diagnosis
+            ]
         
         return {
             'status': 'terdiagnosis',
-            'diagnosis': diagnosis,
-            'gejala_teramati': [self.kb.gejala[g] for g in self.fakta]
+            'diagnosis': filtered_diagnosis,
+            'gejala_teramati': [self.kb.gejala.get(g, g) for g in sorted(self.fakta)]
         }
     
     def get_gejala_list(self):
         """Mendapatkan daftar semua gejala"""
         return self.kb.gejala
+
+    def get_gejala_groups(self):
+        """Mendapatkan daftar gejala yang dikelompokkan per kategori"""
+        return self.kb.get_gejala_groups()
 
 
 class Evaluator:

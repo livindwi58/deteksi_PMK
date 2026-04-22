@@ -6,10 +6,15 @@ Handles saving and retrieving predictions and diagnosis history
 import os
 import json
 import datetime
+from collections import OrderedDict
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
+
+# Timezone setting untuk waktu lokal Indonesia
+import pytz
+TZ_INDONESIA = pytz.timezone('Asia/Jakarta')
 
 # Database configuration from environment variables
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
@@ -41,7 +46,7 @@ class Prediction(Base):
     prediction = Column(String(50))  # 'sehat' or 'sakit'
     confidence = Column(Float)
     features = Column(Text)  # JSON string of features
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None))
 
 
 class DiagnosisHistory(Base):
@@ -53,7 +58,193 @@ class DiagnosisHistory(Base):
     diagnosis = Column(Text)  # JSON string of diagnosis details
     severity = Column(String(50))  # 'ringan', 'sedang', 'berat'
     confidence = Column(Float)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None))
+
+
+class ExpertSymptom(Base):
+    """Master gejala sistem pakar"""
+    __tablename__ = 'expert_symptoms'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), unique=True, nullable=False)
+    description = Column(Text, nullable=False)
+    category = Column(String(50), nullable=True)
+    display_order = Column(Integer, default=0)
+
+
+class ExpertDisease(Base):
+    """Master penyakit sistem pakar"""
+    __tablename__ = 'expert_diseases'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), unique=True, nullable=False)
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=False)
+    solutions = Column(Text, nullable=False)
+    display_order = Column(Integer, default=0)
+
+
+class ExpertRule(Base):
+    """Aturan forward chaining"""
+    __tablename__ = 'expert_rules'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), unique=True, nullable=False)
+    symptom_codes = Column(Text, nullable=False)
+    result_disease_code = Column(String(10), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    display_order = Column(Integer, default=0)
+
+
+DEFAULT_EXPERT_SYMPTOMS = [
+    {'code': 'G01', 'description': 'Demam lebih dari 39.5°C', 'category': 'umum', 'display_order': 1},
+    {'code': 'G02', 'description': 'Air liur keluar berlebihan', 'category': 'mulut', 'display_order': 2},
+    {'code': 'G03', 'description': 'Luka pada lidah, gusi, bantalan gigi, atau bibir', 'category': 'mulut', 'display_order': 3},
+    {'code': 'G04', 'description': 'Nyeri setelah lepuh pecah', 'category': 'mulut', 'display_order': 4},
+    {'code': 'G05', 'description': 'Lepuh pada celah kuku', 'category': 'kaki', 'display_order': 5},
+    {'code': 'G06', 'description': 'Pincang', 'category': 'kaki', 'display_order': 6},
+    {'code': 'G07', 'description': 'Lepuh pada puting', 'category': 'ambing', 'display_order': 7},
+    {'code': 'G08', 'description': 'Lesi atau komplikasi pada puting', 'category': 'ambing', 'display_order': 8},
+    {'code': 'G09', 'description': 'Produksi susu menurun', 'category': 'ambing', 'display_order': 9},
+    {'code': 'G10', 'description': 'Hidung berair', 'category': 'mulut', 'display_order': 10},
+    {'code': 'G11', 'description': 'Nafsu makan turun', 'category': 'umum', 'display_order': 11},
+    {'code': 'G12', 'description': 'Lesu', 'category': 'umum', 'display_order': 12},
+    {'code': 'G13', 'description': 'Miokarditis atau kematian mendadak', 'category': 'berat', 'display_order': 13},
+    {'code': 'G14', 'description': 'Lepuh pada moncong', 'category': 'mulut', 'display_order': 14},
+    {'code': 'G15', 'description': 'Nyeri kaki', 'category': 'kaki', 'display_order': 15},
+    {'code': 'G16', 'description': 'Abortus atau infertilitas', 'category': 'berat', 'display_order': 16},
+    {'code': 'G17', 'description': 'Demam lebih dari 40.5°C', 'category': 'umum', 'display_order': 17},
+    {'code': 'G18', 'description': 'Lepuh pada lidah meluas', 'category': 'mulut', 'display_order': 18},
+    {'code': 'G19', 'description': 'Sulit mengunyah atau menelan', 'category': 'mulut', 'display_order': 19},
+    {'code': 'G20', 'description': 'Lepuh pada bantalan gigi', 'category': 'mulut', 'display_order': 20},
+    {'code': 'G21', 'description': 'Bau mulut', 'category': 'mulut', 'display_order': 21},
+    {'code': 'G22', 'description': 'Edema atau radang', 'category': 'kaki', 'display_order': 22},
+    {'code': 'G23', 'description': 'Bengkak pada celah kuku', 'category': 'kaki', 'display_order': 23},
+    {'code': 'G24', 'description': 'Telapak kaki longgar atau terlepas', 'category': 'kaki', 'display_order': 24},
+    {'code': 'G25', 'description': 'Lebih sering berbaring', 'category': 'umum', 'display_order': 25},
+    {'code': 'G26', 'description': 'Puting retak', 'category': 'ambing', 'display_order': 26},
+    {'code': 'G27', 'description': 'Susu menggumpal', 'category': 'ambing', 'display_order': 27},
+    {'code': 'G28', 'description': 'Takikardia atau irama jantung tidak normal', 'category': 'umum', 'display_order': 28},
+    {'code': 'G29', 'description': 'Sesak napas atau gagal jantung', 'category': 'umum', 'display_order': 29},
+]
+
+DEFAULT_EXPERT_DISEASES = [
+    {
+        'code': 'P01',
+        'name': 'PMK_ORAL',
+        'description': 'PMK yang terutama menyerang bagian mulut. Biasanya terlihat luka, lepuh, air liur berlebih, atau sulit makan dan menelan.',
+        'solutions': [
+            'Pisahkan sapi yang sakit dari sapi yang sehat',
+            'Berikan pakan yang lunak dan mudah dimakan',
+            'Sediakan air minum yang cukup',
+            'Periksa kondisi mulut sapi setiap hari',
+            'Bersihkan luka dengan obat antiseptik sesuai anjuran dokter hewan',
+            'Hubungi dokter hewan jika sapi susah makan atau minum',
+        ],
+        'display_order': 1,
+    },
+    {
+        'code': 'P02',
+        'name': 'PMK_PODAL',
+        'description': 'PMK yang terutama menyerang kaki dan kuku. Biasanya sapi pincang, ada lepuh di celah kuku, atau kaki terasa sakit.',
+        'solutions': [
+            'Pisahkan sapi yang pincang dari kelompoknya',
+            'Jaga kandang tetap kering dan bersih',
+            'Bersihkan serta obati luka pada kaki sesuai anjuran dokter hewan',
+            'Kurangi sapi berjalan terlalu jauh',
+            'Periksa celah kuku dan telapak kaki secara rutin',
+            'Segera minta bantuan dokter hewan jika pincang makin parah',
+        ],
+        'display_order': 2,
+    },
+    {
+        'code': 'P03',
+        'name': 'PMK_LAKTASI',
+        'description': 'PMK yang menyerang ambing dan produksi susu. Biasanya puting retak, ada lepuh pada puting, atau susu menggumpal dan turun.',
+        'solutions': [
+            'Hentikan dulu pemerahan yang memicu sakit pada puting',
+            'Bersihkan puting dan ambing dengan hati-hati',
+            'Jaga kebersihan alat pemerahan',
+            'Pantau produksi susu setiap hari',
+            'Hubungi dokter hewan bila susu menggumpal atau puting luka',
+            'Pisahkan sapi sakit agar tidak menular ke sapi lain',
+        ],
+        'display_order': 3,
+    },
+    {
+        'code': 'P04',
+        'name': 'PMK_JUVENIL',
+        'description': 'PMK pada hewan muda yang biasanya terlihat dengan gejala berat seperti lemas, mudah berbaring, gangguan jantung, atau kematian mendadak.',
+        'solutions': [
+            'Pisahkan hewan muda yang terlihat lemah',
+            'Pantau suhu tubuh dan detak jantung',
+            'Segera hubungi dokter hewan karena kondisi bisa cepat memburuk',
+            'Berikan pakan dan minum yang cukup bila masih mau makan',
+            'Jangan biarkan hewan muda bercampur dengan ternak lain',
+        ],
+        'display_order': 4,
+    },
+    {
+        'code': 'P05',
+        'name': 'PMK_AKUT_GENERAL',
+        'description': 'PMK yang muncul sangat cepat dan berat, biasanya dengan demam tinggi, lesu, nafsu makan turun, dan tanda gangguan tubuh yang umum.',
+        'solutions': [
+            'Pisahkan sapi yang sakit dari kelompoknya',
+            'Hubungi dokter hewan secepatnya',
+            'Pantau suhu tubuh, napas, dan detak jantung',
+            'Berikan pakan yang mudah dimakan bila masih mau makan',
+            'Jaga kebersihan kandang dan alat agar penularan tidak meluas',
+        ],
+        'display_order': 5,
+    },
+]
+
+DEFAULT_EXPERT_RULES = [
+    {
+        'code': 'FC01',
+        'symptom_codes': ['G01', 'G02', 'G03', 'G04', 'G11', 'G18', 'G19', 'G20', 'G21'],
+        'result_disease_code': 'P01',
+        'description': 'PMK oral: demam, air liur berlebihan, luka mulut, nyeri setelah lepuh pecah, nafsu makan turun, luka meluas, sulit mengunyah/menelan, dan bau mulut',
+        'display_order': 1,
+    },
+    {
+        'code': 'FC02',
+        'symptom_codes': ['G01', 'G02', 'G05', 'G06', 'G15', 'G22', 'G23', 'G24', 'G25'],
+        'result_disease_code': 'P02',
+        'description': 'PMK podal: demam, air liur berlebihan, lepuh celah kuku, pincang, nyeri kaki, edema/radang, bengkak celah kuku, telapak kaki longgar, dan lebih sering berbaring',
+        'display_order': 2,
+    },
+    {
+        'code': 'FC03',
+        'symptom_codes': ['G01', 'G02', 'G07', 'G08', 'G09', 'G26', 'G27'],
+        'result_disease_code': 'P03',
+        'description': 'PMK laktasi: demam, air liur berlebihan, lepuh puting, lesi/komplikasi puting, produksi susu menurun, puting retak, dan susu menggumpal',
+        'display_order': 3,
+    },
+    {
+        'code': 'FC04',
+        'symptom_codes': ['G01', 'G13', 'G28', 'G29'],
+        'result_disease_code': 'P04',
+        'description': 'PMK juvenil: demam, miokarditis/kematian mendadak, takikardia atau irama jantung tidak normal, serta sesak napas atau gagal jantung',
+        'display_order': 4,
+    },
+    {
+        'code': 'FC05',
+        'symptom_codes': ['G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07', 'G09', 'G11', 'G12', 'G14', 'G18', 'G20', 'G22', 'G23', 'G24', 'G26'],
+        'result_disease_code': 'P05',
+        'description': 'PMK akut: demam, air liur berlebihan, luka mulut, nyeri setelah lepuh pecah, lepuh kaki/kuku, lepuh puting, produksi susu menurun, nafsu makan turun, lesu, lepuh moncong, luka meluas, edema/radang, bengkak celah kuku, telapak kaki longgar, dan puting retak',
+        'display_order': 5,
+    },
+]
+
+_GROUP_TITLES = OrderedDict([
+    ('umum', 'Gejala Umum / Sistemik'),
+    ('mulut', 'Gejala Mulut / Oral'),
+    ('kaki', 'Gejala Kaki / Kuku'),
+    ('ambing', 'Gejala Ambing / Laktasi'),
+    ('berat', 'Gejala Berat / Khusus'),
+])
 
 
 def get_engine():
@@ -65,10 +256,149 @@ def init_mysql_tables():
     """Initialize database tables"""
     try:
         Base.metadata.create_all(engine)
+        seed_expert_knowledge(force=False)
         print("Database tables initialized successfully")
     except SQLAlchemyError as e:
         print(f"Error initializing database tables: {e}")
         raise
+
+
+def seed_expert_knowledge(force=False):
+    """Isi data default gejala, penyakit, dan aturan sistem pakar."""
+    session = Session()
+    try:
+        existing_symptoms = session.query(ExpertSymptom).count()
+        existing_diseases = session.query(ExpertDisease).count()
+        existing_rules = session.query(ExpertRule).count()
+
+        if not force and existing_symptoms > 0 and existing_diseases > 0 and existing_rules > 0:
+            return {
+                'seeded': False,
+                'symptoms': existing_symptoms,
+                'diseases': existing_diseases,
+                'rules': existing_rules,
+            }
+
+        for item in DEFAULT_EXPERT_SYMPTOMS:
+            row = session.query(ExpertSymptom).filter(ExpertSymptom.code == item['code']).first()
+            if not row:
+                row = ExpertSymptom(code=item['code'])
+                session.add(row)
+            row.description = item['description']
+            row.category = item.get('category')
+            row.display_order = item.get('display_order', 0)
+
+        for item in DEFAULT_EXPERT_DISEASES:
+            row = session.query(ExpertDisease).filter(ExpertDisease.code == item['code']).first()
+            if not row:
+                row = ExpertDisease(code=item['code'])
+                session.add(row)
+            row.name = item['name']
+            row.description = item['description']
+            row.solutions = json.dumps(item.get('solutions', []), ensure_ascii=False)
+            row.display_order = item.get('display_order', 0)
+
+        for item in DEFAULT_EXPERT_RULES:
+            row = session.query(ExpertRule).filter(ExpertRule.code == item['code']).first()
+            if not row:
+                row = ExpertRule(code=item['code'])
+                session.add(row)
+            row.symptom_codes = json.dumps(item.get('symptom_codes', []), ensure_ascii=False)
+            row.result_disease_code = item['result_disease_code']
+            row.description = item.get('description', '')
+            row.is_active = True
+            row.display_order = item.get('display_order', 0)
+
+        session.commit()
+
+        return {
+            'seeded': True,
+            'symptoms': session.query(ExpertSymptom).count(),
+            'diseases': session.query(ExpertDisease).count(),
+            'rules': session.query(ExpertRule).count(),
+        }
+    except SQLAlchemyError as e:
+        session.rollback()
+        print(f"Error seeding expert knowledge: {e}")
+        raise
+    finally:
+        session.close()
+
+
+def get_expert_knowledge_mysql():
+    """Ambil knowledge base sistem pakar (gejala, penyakit, aturan) dari MySQL."""
+    session = Session()
+    try:
+        symptoms = session.query(ExpertSymptom).order_by(ExpertSymptom.display_order.asc(), ExpertSymptom.code.asc()).all()
+        diseases = session.query(ExpertDisease).order_by(ExpertDisease.display_order.asc(), ExpertDisease.code.asc()).all()
+        rules = session.query(ExpertRule).filter(ExpertRule.is_active == True).order_by(ExpertRule.display_order.asc(), ExpertRule.code.asc()).all()
+
+        if not symptoms or not diseases or not rules:
+            seed_expert_knowledge(force=False)
+            session.close()
+            session = Session()
+            symptoms = session.query(ExpertSymptom).order_by(ExpertSymptom.display_order.asc(), ExpertSymptom.code.asc()).all()
+            diseases = session.query(ExpertDisease).order_by(ExpertDisease.display_order.asc(), ExpertDisease.code.asc()).all()
+            rules = session.query(ExpertRule).filter(ExpertRule.is_active == True).order_by(ExpertRule.display_order.asc(), ExpertRule.code.asc()).all()
+
+        gejala = OrderedDict()
+        grouped_codes = {k: [] for k in _GROUP_TITLES.keys()}
+        for row in symptoms:
+            gejala[row.code] = row.description
+            category = (row.category or 'umum').lower()
+            if category not in grouped_codes:
+                grouped_codes[category] = []
+            grouped_codes[category].append(row.code)
+
+        penyakit = OrderedDict()
+        for row in diseases:
+            try:
+                solusi = json.loads(row.solutions) if row.solutions else []
+                if not isinstance(solusi, list):
+                    solusi = []
+            except Exception:
+                solusi = []
+
+            penyakit[row.code] = {
+                'nama': row.name,
+                'deskripsi': row.description,
+                'solusi': solusi,
+            }
+
+        aturan = []
+        for row in rules:
+            try:
+                gejala_codes = json.loads(row.symptom_codes) if row.symptom_codes else []
+                if not isinstance(gejala_codes, list):
+                    gejala_codes = []
+            except Exception:
+                gejala_codes = []
+
+            aturan.append({
+                'kode': row.code,
+                'gejala': gejala_codes,
+                'hasil': row.result_disease_code,
+                'deskripsi': row.description or '',
+            })
+
+        gejala_groups = OrderedDict()
+        for key, title in _GROUP_TITLES.items():
+            gejala_groups[key] = {
+                'title': title,
+                'codes': grouped_codes.get(key, []),
+            }
+
+        return {
+            'gejala': dict(gejala),
+            'penyakit': dict(penyakit),
+            'aturan': aturan,
+            'gejala_groups': gejala_groups,
+        }
+    except SQLAlchemyError as e:
+        print(f"Error loading expert knowledge from MySQL: {e}")
+        return None
+    finally:
+        session.close()
 
 
 def save_prediction_mysql(original_filename, filename, image_path, prediction, confidence, features_dict, timestamp=None):
@@ -101,7 +431,7 @@ def save_prediction_mysql(original_filename, filename, image_path, prediction, c
             prediction=prediction.lower(),
             confidence=float(confidence),
             features=features_json,
-            timestamp=timestamp or datetime.datetime.utcnow()
+            timestamp=timestamp or datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None)
         )
         
         session.add(pred)
@@ -226,7 +556,7 @@ def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', confi
             diagnosis=diagnosis_json,
             severity=severity,
             confidence=float(confidence) if confidence else None,
-            timestamp=timestamp or datetime.datetime.utcnow()
+            timestamp=timestamp or datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None)
         )
         
         session.add(diag)
