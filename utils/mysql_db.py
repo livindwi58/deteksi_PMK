@@ -17,19 +17,31 @@ from sqlalchemy.exc import SQLAlchemyError
 import pytz
 TZ_INDONESIA = pytz.timezone('Asia/Jakarta')
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+
+
+def _normalize_port(value, default='3306'):
+    """Return a numeric MySQL port string or a safe default."""
+    if value is None:
+        return default
+
+    value = str(value).strip()
+    return value if value.isdigit() else default
 
 
 def _build_database_uri():
     """Build a SQLAlchemy database URI from Railway or local environment variables."""
     if DATABASE_URL:
-        url = make_url(DATABASE_URL)
-        if url.drivername == 'mysql':
-            url = url.set(drivername='mysql+pymysql')
-        return str(url)
+        try:
+            url = make_url(DATABASE_URL)
+            if url.drivername == 'mysql':
+                url = url.set(drivername='mysql+pymysql')
+            return str(url)
+        except Exception as e:
+            print(f"[MYSQL] Ignoring invalid DATABASE_URL: {e}")
 
     db_host = os.environ.get('DB_HOST') or os.environ.get('MYSQLHOST', 'localhost')
-    db_port = os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT', '3306')
+    db_port = _normalize_port(os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT'))
     db_user = os.environ.get('DB_USER') or os.environ.get('MYSQLUSER', 'root')
     db_password = os.environ.get('DB_PASSWORD') or os.environ.get('MYSQLPASSWORD', '')
     db_name = os.environ.get('DB_NAME') or os.environ.get('MYSQLDATABASE', 'deteksi_pmk')
@@ -43,9 +55,14 @@ def _build_database_uri():
 DATABASE_URI = _build_database_uri()
 
 # Create engine
-engine = create_engine(DATABASE_URI, echo=False, pool_pre_ping=True)
+try:
+    engine = create_engine(DATABASE_URI, echo=False, pool_pre_ping=True)
+except Exception as e:
+    print(f"[MYSQL] Database engine unavailable: {e}")
+    engine = None
+
 Base = declarative_base()
-Session = sessionmaker(bind=engine)
+Session = sessionmaker(bind=engine) if engine is not None else sessionmaker()
 
 
 def _prediction_source_from_features(features):
@@ -285,6 +302,10 @@ def get_engine():
 
 def init_mysql_tables():
     """Initialize database tables"""
+    if engine is None:
+        print("[MYSQL] Skipping table initialization because database engine is unavailable")
+        return False
+
     try:
         Base.metadata.create_all(engine)
         migrate_diagnosis_history_schema()
@@ -292,6 +313,7 @@ def init_mysql_tables():
         seed_expert_knowledge(force=False)
         sync_expert_rule_symptom_relations()
         print("Database tables initialized successfully")
+        return True
     except SQLAlchemyError as e:
         print(f"Error initializing database tables: {e}")
         raise
@@ -299,6 +321,9 @@ def init_mysql_tables():
 
 def migrate_diagnosis_history_schema():
     """Remove legacy diagnosis_history columns that are no longer used."""
+    if engine is None:
+        return
+
     try:
         inspector = inspect(engine)
         table_names = inspector.get_table_names()
@@ -318,6 +343,9 @@ def migrate_diagnosis_history_schema():
 
 def migrate_expert_rule_disease_fk():
     """Add the missing foreign key from expert_rules.result_disease_code to expert_diseases.code."""
+    if engine is None:
+        return
+
     try:
         inspector = inspect(engine)
         if 'expert_rules' not in inspector.get_table_names() or 'expert_diseases' not in inspector.get_table_names():
@@ -342,6 +370,9 @@ def migrate_expert_rule_disease_fk():
 
 def sync_expert_rule_symptom_relations():
     """Backfill the expert_rules_expert_symptoms join table from stored symptom codes."""
+    if engine is None:
+        return
+
     session = Session()
     try:
         session.execute(expert_rules_expert_symptoms.delete())
@@ -377,6 +408,14 @@ def sync_expert_rule_symptom_relations():
 
 def seed_expert_knowledge(force=False):
     """Isi data default gejala, penyakit, dan aturan sistem pakar."""
+    if engine is None:
+        return {
+            'seeded': False,
+            'symptoms': 0,
+            'diseases': 0,
+            'rules': 0,
+        }
+
     session = Session()
     try:
         existing_symptoms = session.query(ExpertSymptom).count()
@@ -440,6 +479,9 @@ def seed_expert_knowledge(force=False):
 
 def get_expert_knowledge_mysql():
     """Ambil knowledge base sistem pakar (gejala, penyakit, aturan) dari MySQL."""
+    if engine is None:
+        return None
+
     session = Session()
     try:
         symptoms = session.query(ExpertSymptom).order_by(ExpertSymptom.display_order.asc(), ExpertSymptom.code.asc()).all()
