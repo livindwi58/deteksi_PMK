@@ -22,6 +22,21 @@ python app.py
 
 Buka browser ke: **http://localhost:5000**
 
+## Deploy ke Railway
+
+Repository ini sudah disiapkan untuk Railway dengan entrypoint Flask di `app.py`.
+
+1. Hubungkan repository ini ke Railway.
+2. Tambahkan layanan database MySQL di Railway jika ingin penyimpanan riwayat berjalan.
+3. Set environment variable berikut di Railway:
+	- `FLASK_SECRET`
+	- `DATABASE_URL` atau `MYSQLHOST`, `MYSQLPORT`, `MYSQLUSER`, `MYSQLPASSWORD`, `MYSQLDATABASE`
+4. Railway akan menjalankan `gunicorn app:app --bind 0.0.0.0:$PORT`.
+
+Catatan:
+- `opencv-python-headless` dipakai supaya build Railway tidak bergantung pada library GUI.
+- Jika model belum ada di folder `models/`, jalankan training dulu sebelum deploy.
+
 ## Langkah 3: Upload Gambar & Lihat Riwayat
 
 1. **Upload**: Klik "Upload Gambar" → Pilih file → Upload
@@ -45,6 +60,8 @@ DB_HOST=localhost
 DB_USER=root
 DB_PASSWORD=
 DB_NAME=deteksi_pmk
+
+Untuk Railway, lebih aman pakai variabel environment yang disediakan oleh plugin database atau `DATABASE_URL`.
 ```
 
 ## 🔗 Useful Routes

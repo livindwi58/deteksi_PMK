@@ -8,6 +8,7 @@ import json
 import datetime
 from collections import OrderedDict
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey, Table, inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,18 +17,30 @@ from sqlalchemy.exc import SQLAlchemyError
 import pytz
 TZ_INDONESIA = pytz.timezone('Asia/Jakarta')
 
-# Database configuration from environment variables
-DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_PORT = os.environ.get('DB_PORT', '3306')
-DB_USER = os.environ.get('DB_USER', 'root')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
-DB_NAME = os.environ.get('DB_NAME', 'deteksi_pmk')
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+
+def _build_database_uri():
+    """Build a SQLAlchemy database URI from Railway or local environment variables."""
+    if DATABASE_URL:
+        url = make_url(DATABASE_URL)
+        if url.drivername == 'mysql':
+            url = url.set(drivername='mysql+pymysql')
+        return str(url)
+
+    db_host = os.environ.get('DB_HOST') or os.environ.get('MYSQLHOST', 'localhost')
+    db_port = os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT', '3306')
+    db_user = os.environ.get('DB_USER') or os.environ.get('MYSQLUSER', 'root')
+    db_password = os.environ.get('DB_PASSWORD') or os.environ.get('MYSQLPASSWORD', '')
+    db_name = os.environ.get('DB_NAME') or os.environ.get('MYSQLDATABASE', 'deteksi_pmk')
+
+    if db_password:
+        return f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    return f"mysql+pymysql://{db_user}@{db_host}:{db_port}/{db_name}"
+
 
 # Create database URI
-if DB_PASSWORD:
-    DATABASE_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-else:
-    DATABASE_URI = f"mysql+pymysql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URI = _build_database_uri()
 
 # Create engine
 engine = create_engine(DATABASE_URI, echo=False, pool_pre_ping=True)
