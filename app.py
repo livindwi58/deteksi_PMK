@@ -51,26 +51,16 @@ try:
         get_diagnosis_by_prediction_id,
         get_engine,
     )
-  
-    try:
-        engine = get_engine()
-        # quick connect test
-        with engine.connect() as conn:
-            # initialize tables if needed
-            try:
-                init_mysql_tables()
-            except Exception as init_err:
-               
-                print(f"⚠️  Warning: Database tables initialization failed: {init_err}")
-        print("✓ MySQL Database connected successfully")
-        MYSQL_AVAILABLE = True
-    except Exception as e:
-        import traceback
-        print('❌ MySQL not available at startup:')
-        print(f"   Error: {e}")
-        print("   Cek: 1) MySQL Server berjalan? 2) .env credentials benar? 3) Database 'deteksi_pmk' ada?")
-        traceback.print_exc()
-        MYSQL_AVAILABLE = False
+    engine = get_engine()
+    MYSQL_AVAILABLE = engine is not None
+    if MYSQL_AVAILABLE:
+        try:
+            init_mysql_tables()
+            print("✓ MySQL database initialized")
+        except Exception as init_err:
+            print(f"⚠️  Warning: Database tables initialization failed: {init_err}")
+    else:
+        print("[APP] MySQL disabled: no valid database configuration found")
 except Exception as import_err:
     print(f"❌ Failed to import MySQL utilities: {import_err}")
     MYSQL_AVAILABLE = False

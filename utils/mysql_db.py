@@ -40,11 +40,15 @@ def _build_database_uri():
         except Exception as e:
             print(f"[MYSQL] Ignoring invalid DATABASE_URL: {e}")
 
-    db_host = os.environ.get('DB_HOST') or os.environ.get('MYSQLHOST', 'localhost')
-    db_port = _normalize_port(os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT'))
-    db_user = os.environ.get('DB_USER') or os.environ.get('MYSQLUSER', 'root')
+    db_host = (os.environ.get('DB_HOST') or os.environ.get('MYSQLHOST') or '').strip()
+    db_user = (os.environ.get('DB_USER') or os.environ.get('MYSQLUSER') or '').strip()
     db_password = os.environ.get('DB_PASSWORD') or os.environ.get('MYSQLPASSWORD', '')
-    db_name = os.environ.get('DB_NAME') or os.environ.get('MYSQLDATABASE', 'deteksi_pmk')
+    db_name = (os.environ.get('DB_NAME') or os.environ.get('MYSQLDATABASE') or '').strip()
+
+    if not db_host or not db_user or not db_name:
+        return None
+
+    db_port = _normalize_port(os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT'))
 
     if db_password:
         return f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
@@ -55,10 +59,13 @@ def _build_database_uri():
 DATABASE_URI = _build_database_uri()
 
 # Create engine
-try:
-    engine = create_engine(DATABASE_URI, echo=False, pool_pre_ping=True)
-except Exception as e:
-    print(f"[MYSQL] Database engine unavailable: {e}")
+if DATABASE_URI:
+    try:
+        engine = create_engine(DATABASE_URI, echo=False, pool_pre_ping=True)
+    except Exception as e:
+        print(f"[MYSQL] Database engine unavailable: {e}")
+        engine = None
+else:
     engine = None
 
 Base = declarative_base()
