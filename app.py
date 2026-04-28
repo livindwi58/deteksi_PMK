@@ -8,8 +8,9 @@ import uuid
 import time
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file only for local development.
+if not os.environ.get('PORT') and not os.environ.get('RAILWAY_ENVIRONMENT') and not os.environ.get('RAILWAY_PROJECT_ID'):
+    load_dotenv()
 
 from utils.helpers import load_model, estimate_prediction_confidence
 from utils.preprocessing import preprocess_image, preprocess_pipeline, validate_cattle_image
