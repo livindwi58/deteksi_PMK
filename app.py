@@ -8,9 +8,8 @@ import uuid
 import time
 from dotenv import load_dotenv
 
-# Load environment variables from .env file only for local development.
-if not os.environ.get('PORT') and not os.environ.get('RAILWAY_ENVIRONMENT') and not os.environ.get('RAILWAY_PROJECT_ID'):
-    load_dotenv()
+# Load environment variables from .env file
+load_dotenv()
 
 from utils.helpers import load_model, estimate_prediction_confidence
 from utils.preprocessing import preprocess_image, preprocess_pipeline, validate_cattle_image
@@ -40,34 +39,6 @@ def get_symptom_desc(symptom_code):
     return kb.gejala.get(symptom_code, symptom_code)
 
 
-def _serialize_knowledge_base():
-    """Return the current expert knowledge in JSON-serializable form."""
-    return {
-        'source': 'mysql' if MYSQL_AVAILABLE else 'builtin',
-        'gejala': dict(expert_system.get_gejala_list()),
-        'gejala_groups': dict(expert_system.get_gejala_groups()),
-        'penyakit': dict(expert_system.kb.penyakit),
-        'aturan': list(expert_system.kb.aturan),
-    }
-
-
-@app.route('/api/expert-knowledge')
-def api_expert_knowledge():
-    """Expose PMK expert knowledge as JSON."""
-    return jsonify(_serialize_knowledge_base())
-
-
-@app.route('/api/gejala')
-def api_gejala():
-    """Expose the PMK gejala master list as JSON."""
-    payload = _serialize_knowledge_base()
-    return jsonify({
-        'source': payload['source'],
-        'gejala': payload['gejala'],
-        'gejala_groups': payload['gejala_groups'],
-    })
-
-
 try:
     from utils.mysql_db import (
         save_prediction_mysql,
@@ -80,16 +51,26 @@ try:
         get_diagnosis_by_prediction_id,
         get_engine,
     )
-    engine = get_engine()
-    MYSQL_AVAILABLE = engine is not None
-    if MYSQL_AVAILABLE:
-        try:
-            init_mysql_tables()
-            print("✓ MySQL database initialized")
-        except Exception as init_err:
-            print(f"⚠️  Warning: Database tables initialization failed: {init_err}")
-    else:
-        print("[APP] MySQL disabled: no valid database configuration found")
+  
+    try:
+        engine = get_engine()
+        # quick connect test
+        with engine.connect() as conn:
+            # initialize tables if needed
+            try:
+                init_mysql_tables()
+            except Exception as init_err:
+               
+                print(f"⚠️  Warning: Database tables initialization failed: {init_err}")
+        print("✓ MySQL Database connected successfully")
+        MYSQL_AVAILABLE = True
+    except Exception as e:
+        import traceback
+        print('❌ MySQL not available at startup:')
+        print(f"   Error: {e}")
+        print("   Cek: 1) MySQL Server berjalan? 2) .env credentials benar? 3) Database 'deteksi_pmk' ada?")
+        traceback.print_exc()
+        MYSQL_AVAILABLE = False
 except Exception as import_err:
     print(f"❌ Failed to import MySQL utilities: {import_err}")
     MYSQL_AVAILABLE = False

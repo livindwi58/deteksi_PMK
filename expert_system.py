@@ -36,19 +36,10 @@ class KnowledgeBase:
         )
 
     def _set_fallback_knowledge(self):
-        try:
-            from utils.mysql_db import get_builtin_expert_knowledge
-
-            knowledge = get_builtin_expert_knowledge()
-            self.gejala = knowledge.get('gejala', {})
-            self.penyakit = knowledge.get('penyakit', {})
-            self.aturan = knowledge.get('aturan', [])
-            self.gejala_groups = knowledge.get('gejala_groups', self._empty_groups())
-        except Exception:
-            self.gejala = {}
-            self.penyakit = {}
-            self.aturan = []
-            self.gejala_groups = self._empty_groups()
+        self.gejala = {}
+        self.penyakit = {}
+        self.aturan = []
+        self.gejala_groups = self._empty_groups()
 
     def _load_from_database(self):
         try:
