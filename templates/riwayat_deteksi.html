@@ -228,26 +228,32 @@ function createHistoryRow(item) {
     tr.id = `pred-${item.id}`;
     tr.dataset.predictionId = item.id;
     tr.dataset.prediction = item.prediction || '';
+    tr.dataset.source = item.source || 'image_processing';
 
     const fileName = item.filename || item.original_filename || item.image_path || '-';
-    const imageCell = item.image_url
+    const imageCell = item.source === 'manual_expert_system'
+        ? '<span class="badge bg-secondary">Sistem Pakar</span>'
+        : item.image_url
         ? `<a href="${item.image_url}" target="_blank"><i class="fas fa-image me-1"></i>${fileName.length > 20 ? fileName.slice(0, 20) + '...' : fileName}</a>`
         : fileName;
 
     const badgeClass = item.prediction === 'sakit' ? 'bg-warning text-dark' : 'bg-success';
-    const badgeText = item.prediction === 'sakit' ? 'Positif PMK' : 'Sehat';
+    const badgeText = item.source === 'manual_expert_system'
+        ? (item.display_label || item.diagnosis_label || 'Hasil Forward Chaining')
+        : (item.prediction === 'sakit' ? 'Positif PMK' : 'Sehat');
     const progressClass = item.prediction === 'sakit' ? 'bg-warning' : 'bg-success';
-    const confidence = Number(item.confidence || 0).toFixed(1);
-    const safeConfidence = Math.max(0, Math.min(100, Number(item.confidence || 0)));
+    const showConfidence = item.show_confidence !== false && item.confidence !== null && item.confidence !== undefined;
+    const confidence = showConfidence ? Number(item.confidence || 0).toFixed(1) : '-';
+    const safeConfidence = showConfidence ? Math.max(0, Math.min(100, Number(item.confidence || 0))) : 0;
 
     tr.innerHTML = `
         <td><span class="timestamp-realtime" data-timestamp="${item.timestamp || ''}">${formatTimestamp(item.timestamp)}</span></td>
         <td>${imageCell}</td>
         <td><span class="badge ${badgeClass}">${badgeText}</span></td>
         <td>
-            <div class="progress" style="height: 20px;">
-                <div class="progress-bar ${progressClass}" style="width: ${safeConfidence}%;">${confidence}%</div>
-            </div>
+            ${showConfidence ? `<div class="progress" style="height: 20px;">
+                <div class="progress-bar ${progressClass}" style="width: ${safeConfidence}%">${confidence}%</div>
+            </div>` : '<span class="text-muted">-</span>'}
         </td>
         <td>
             <a href="${item.detail_url}" class="btn btn-sm btn-info">

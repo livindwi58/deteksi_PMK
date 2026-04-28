@@ -7,9 +7,9 @@ import os
 import json
 import datetime
 from collections import OrderedDict
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey, Table, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
 
 # Timezone setting untuk waktu lokal Indonesia
@@ -35,6 +35,21 @@ Base = declarative_base()
 Session = sessionmaker(bind=engine)
 
 
+def _prediction_source_from_features(features):
+    """Infer the prediction source from stored features metadata."""
+    if isinstance(features, dict) and features.get('diagnosis_method') == 'manual_expert_system':
+        return 'manual_expert_system'
+    return 'image_processing'
+
+
+expert_rules_expert_symptoms = Table(
+    'expert_rules_expert_symptoms',
+    Base.metadata,
+    Column('rule_id', Integer, ForeignKey('expert_rules.id', ondelete='CASCADE'), primary_key=True),
+    Column('symptom_id', Integer, ForeignKey('expert_symptoms.id', ondelete='CASCADE'), primary_key=True),
+)
+
+
 class Prediction(Base):
     """Model untuk menyimpan hasil prediksi"""
     __tablename__ = 'predictions'
@@ -57,7 +72,6 @@ class DiagnosisHistory(Base):
     prediction_id = Column(Integer, ForeignKey('predictions.id'), nullable=True)  # FK ke predictions table
     diagnosis = Column(Text)  # JSON string of diagnosis details
     severity = Column(String(50))  # 'ringan', 'sedang', 'berat'
-    confidence = Column(Float)
     timestamp = Column(DateTime, default=lambda: datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None))
 
 
@@ -70,6 +84,7 @@ class ExpertSymptom(Base):
     description = Column(Text, nullable=False)
     category = Column(String(50), nullable=True)
     display_order = Column(Integer, default=0)
+    rules = relationship('ExpertRule', secondary=expert_rules_expert_symptoms, back_populates='symptoms')
 
 
 class ExpertDisease(Base):
@@ -82,6 +97,7 @@ class ExpertDisease(Base):
     description = Column(Text, nullable=False)
     solutions = Column(Text, nullable=False)
     display_order = Column(Integer, default=0)
+    rules = relationship('ExpertRule', back_populates='disease')
 
 
 class ExpertRule(Base):
@@ -91,10 +107,12 @@ class ExpertRule(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     code = Column(String(20), unique=True, nullable=False)
     symptom_codes = Column(Text, nullable=False)
-    result_disease_code = Column(String(10), nullable=False)
+    result_disease_code = Column(String(10), ForeignKey('expert_diseases.code'), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     display_order = Column(Integer, default=0)
+    disease = relationship('ExpertDisease', back_populates='rules')
+    symptoms = relationship('ExpertSymptom', secondary=expert_rules_expert_symptoms, back_populates='rules')
 
 
 DEFAULT_EXPERT_SYMPTOMS = [
@@ -256,11 +274,92 @@ def init_mysql_tables():
     """Initialize database tables"""
     try:
         Base.metadata.create_all(engine)
+        migrate_diagnosis_history_schema()
+        migrate_expert_rule_disease_fk()
         seed_expert_knowledge(force=False)
+        sync_expert_rule_symptom_relations()
         print("Database tables initialized successfully")
     except SQLAlchemyError as e:
         print(f"Error initializing database tables: {e}")
         raise
+
+
+def migrate_diagnosis_history_schema():
+    """Remove legacy diagnosis_history columns that are no longer used."""
+    try:
+        inspector = inspect(engine)
+        table_names = inspector.get_table_names()
+        if 'diagnosis_history' not in table_names:
+            return
+
+        column_names = {column['name'] for column in inspector.get_columns('diagnosis_history')}
+        if 'confidence' not in column_names:
+            return
+
+        with engine.begin() as connection:
+            connection.execute(text('ALTER TABLE diagnosis_history DROP COLUMN confidence'))
+        print("✓ Removed legacy confidence column from diagnosis_history")
+    except SQLAlchemyError as e:
+        print(f"Warning: unable to migrate diagnosis_history schema: {e}")
+
+
+def migrate_expert_rule_disease_fk():
+    """Add the missing foreign key from expert_rules.result_disease_code to expert_diseases.code."""
+    try:
+        inspector = inspect(engine)
+        if 'expert_rules' not in inspector.get_table_names() or 'expert_diseases' not in inspector.get_table_names():
+            return
+
+        existing_fks = inspector.get_foreign_keys('expert_rules')
+        for fk in existing_fks:
+            if fk.get('constrained_columns') == ['result_disease_code']:
+                return
+
+        with engine.begin() as connection:
+            connection.execute(text(
+                'ALTER TABLE expert_rules '
+                'ADD CONSTRAINT fk_expert_rules_disease '
+                'FOREIGN KEY (result_disease_code) REFERENCES expert_diseases(code) '
+                'ON UPDATE CASCADE ON DELETE RESTRICT'
+            ))
+        print("✓ Added foreign key expert_rules.result_disease_code -> expert_diseases.code")
+    except SQLAlchemyError as e:
+        print(f"Warning: unable to add expert_rules disease foreign key: {e}")
+
+
+def sync_expert_rule_symptom_relations():
+    """Backfill the expert_rules_expert_symptoms join table from stored symptom codes."""
+    session = Session()
+    try:
+        session.execute(expert_rules_expert_symptoms.delete())
+
+        rules = session.query(ExpertRule).all()
+        symptoms_by_code = {row.code: row for row in session.query(ExpertSymptom).all()}
+
+        for rule in rules:
+            try:
+                symptom_codes = json.loads(rule.symptom_codes) if rule.symptom_codes else []
+                if not isinstance(symptom_codes, list):
+                    symptom_codes = []
+            except Exception:
+                symptom_codes = []
+
+            for symptom_code in symptom_codes:
+                symptom = symptoms_by_code.get(symptom_code)
+                if symptom:
+                    session.execute(
+                        expert_rules_expert_symptoms.insert().values(
+                            rule_id=rule.id,
+                            symptom_id=symptom.id,
+                        )
+                    )
+
+        session.commit()
+    except SQLAlchemyError as e:
+        session.rollback()
+        print(f"Warning: unable to sync expert rule symptom relations: {e}")
+    finally:
+        session.close()
 
 
 def seed_expert_knowledge(force=False):
@@ -310,6 +409,7 @@ def seed_expert_knowledge(force=False):
             row.display_order = item.get('display_order', 0)
 
         session.commit()
+        sync_expert_rule_symptom_relations()
 
         return {
             'seeded': True,
@@ -469,6 +569,13 @@ def get_recent_predictions_mysql(limit=10):
                 features = json.loads(pred.features) if pred.features else {}
             except:
                 features = {}
+
+            source = _prediction_source_from_features(features)
+            diagnosis = get_diagnosis_by_prediction_id(pred.id)
+
+            diagnosis_label = None
+            if diagnosis and isinstance(diagnosis, dict):
+                diagnosis_label = diagnosis.get('diagnosis', {}).get('nama') or diagnosis.get('diagnosis', {}).get('name')
             
             result.append({
                 'id': pred.id,
@@ -478,6 +585,9 @@ def get_recent_predictions_mysql(limit=10):
                 'prediction': pred.prediction,
                 'confidence': round(float(pred.confidence), 4),
                 'features': features,
+                'source': source,
+                'diagnosis': diagnosis,
+                'diagnosis_label': diagnosis_label,
                 'timestamp': pred.timestamp.isoformat() if pred.timestamp else None
             })
         
@@ -511,6 +621,12 @@ def get_prediction_by_id(pred_id):
             features = json.loads(pred.features) if pred.features else {}
         except:
             features = {}
+
+        source = _prediction_source_from_features(features)
+        diagnosis = get_diagnosis_by_prediction_id(pred.id)
+        diagnosis_label = None
+        if diagnosis and isinstance(diagnosis, dict):
+            diagnosis_label = diagnosis.get('diagnosis', {}).get('nama') or diagnosis.get('diagnosis', {}).get('name')
         
         result = {
             'id': pred.id,
@@ -520,6 +636,9 @@ def get_prediction_by_id(pred_id):
             'prediction': pred.prediction,
             'confidence': round(float(pred.confidence), 4),
             'features': features,
+            'source': source,
+            'diagnosis': diagnosis,
+            'diagnosis_label': diagnosis_label,
             'timestamp': pred.timestamp.isoformat() if pred.timestamp else None
         }
         
@@ -530,7 +649,7 @@ def get_prediction_by_id(pred_id):
         return None
 
 
-def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', confidence=None, timestamp=None):
+def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', timestamp=None):
     """
     Save diagnosis result from expert system to database
     
@@ -538,7 +657,6 @@ def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', confi
         prediction_id: Foreign Key ke predictions table (prediction yang di-diagnosa)
         diagnosis_dict: Dictionary of diagnosis details from expert system
         severity: 'ringan', 'sedang', or 'berat'
-        confidence: Confidence score (optional)
         timestamp: Optional datetime, defaults to now
     
     Returns:
@@ -555,7 +673,6 @@ def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', confi
             prediction_id=prediction_id,
             diagnosis=diagnosis_json,
             severity=severity,
-            confidence=float(confidence) if confidence else None,
             timestamp=timestamp or datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None)
         )
         
@@ -601,7 +718,6 @@ def get_diagnosis_history_mysql(limit=50, order_by='timestamp'):
                 'prediction_id': diag.prediction_id,
                 'diagnosis': diagnosis,
                 'severity': diag.severity,
-                'confidence': round(float(diag.confidence), 4) if diag.confidence else None,
                 'timestamp': diag.timestamp.isoformat() if diag.timestamp else None
             })
         
@@ -641,7 +757,6 @@ def get_diagnosis_by_id(diag_id):
             'prediction_id': diag.prediction_id,
             'diagnosis': diagnosis,
             'severity': diag.severity,
-            'confidence': round(float(diag.confidence), 4) if diag.confidence else None,
             'timestamp': diag.timestamp.isoformat() if diag.timestamp else None
         }
         
@@ -684,7 +799,6 @@ def get_diagnosis_by_prediction_id(pred_id):
             'prediction_id': diag.prediction_id,
             'diagnosis': diagnosis,
             'severity': diag.severity,
-            'confidence': round(float(diag.confidence), 4) if diag.confidence else None,
             'timestamp': diag.timestamp.isoformat() if diag.timestamp else None
         }
         

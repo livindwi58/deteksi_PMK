@@ -113,7 +113,7 @@ def train_knn_model(data_dir='dataset', test_size=0.2, random_state=42):
     
     knn = KNeighborsClassifier(
         n_neighbors=5,
-        weights='distance',
+        weights='uniform',
         metric='euclidean',
         n_jobs=-1
     )

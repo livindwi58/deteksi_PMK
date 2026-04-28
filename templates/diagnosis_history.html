@@ -43,7 +43,6 @@
                                 <th>Waktu</th>
                                 <th>Gejala Terpilih</th>
                                 <th>Diagnosis</th>
-                                <th>Tingkat Keyakinan</th>
                                 <th>Rekomendasi</th>
                                 <th>Aksi</th>
                             </tr>
@@ -64,16 +63,6 @@
                                                       {% else %}bg-danger{% endif %}">
                                         {{ item.diagnosis }}
                                     </span>
-                                </td>
-                                <td>
-                                    <div class="progress" style="height: 20px;">
-                                        <div class="progress-bar {% if 'Ringan' in item.diagnosis %}bg-success
-                                                                  {% elif 'Sedang' in item.diagnosis %}bg-warning
-                                                                  {% else %}bg-danger{% endif %}" 
-                                             style="width: 0%;" data-width="{{ item.confidence|round(1) }}">
-                                            {{ "%.1f"|format(item.confidence) }}%
-                                        </div>
-                                    </div>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm btn-primary" onclick="showRekomendasi('{{ item.rekomendasi }}')">

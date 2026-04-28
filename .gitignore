@@ -2,5 +2,5 @@ __pycache__
 .vscode
 models/*
 results/*
-dataset/*
+# dataset/*
 uploads/*

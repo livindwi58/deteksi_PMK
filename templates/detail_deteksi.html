@@ -3,6 +3,7 @@
 {% block title %}Detail Riwayat Deteksi{% endblock %}
 
 {% block content %}
+{% set is_manual_expert_system = prediction.source == 'manual_expert_system' %}
 <div class="container-lg mt-5 mb-5">
     {% if prediction %}
     <div class="row">
@@ -32,7 +33,7 @@
                     </div>
 
                     <!-- Image Display -->
-                    {% if prediction.image_path %}
+                    {% if prediction.image_path and not is_manual_expert_system %}
                     <div class="card mb-4">
                         <div class="card-header">
                             <h5 class="mb-0"><i class="fas fa-image"></i> Foto yang Dianalisis</h5>
@@ -48,13 +49,18 @@
                     <!-- Prediction Result -->
                     <div class="card mb-4">
                         <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-stethoscope"></i> Hasil Prediksi</h5>
+                            <h5 class="mb-0"><i class="fas fa-stethoscope"></i>{% if is_manual_expert_system %} Hasil Diagnosis Sistem Pakar{% else %} Hasil Prediksi{% endif %}</h5>
                         </div>
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="text-center p-4">
-                                        {% if prediction.prediction.lower() == 'sehat' %}
+                                        {% if is_manual_expert_system %}
+                                            <div class="badge bg-warning text-dark p-3 mb-3" style="font-size: 1.2rem;">
+                                                <i class="fas fa-biohazard"></i> POSITIF PMK
+                                            </div>
+                                            <h5 class="text-warning fw-bold">Kesimpulan: {{ diagnosis.diagnosis.nama or prediction.diagnosis_label or 'Hasil Forward Chaining' }}</h5>
+                                        {% elif prediction.prediction.lower() == 'sehat' %}
                                             <div class="badge bg-success p-3 mb-3" style="font-size: 1.2rem;">
                                                 <i class="fas fa-check-circle"></i> SEHAT
                                             </div>
@@ -68,6 +74,7 @@
                                     </div>
                                 </div>
                                 <div class="col-md-6">
+                                    {% if not is_manual_expert_system %}
                                     <div class="alert alert-info">
                                         <h6 class="text-muted mb-2">Confidence Score</h6>
                                         <div class="progress mb-2" style="height: 25px;">
@@ -83,6 +90,13 @@
                                         </div>
                                         <small class="text-muted">Tingkat kepercayaan model terhadap hasil prediksi</small>
                                     </div>
+                                    {% else %}
+                                    <div class="alert alert-info">
+                                        <h6 class="text-muted mb-2">Sumber Diagnosis</h6>
+                                        <p class="mb-0 fw-bold">Forward Chaining Sistem Pakar</p>
+                                        <small class="text-muted">Confidence tidak ditampilkan untuk diagnosis sistem pakar.</small>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -163,20 +177,9 @@
                             </div>
                             {% endif %}
 
-                            <!-- Confidence and All Diagnoses -->
+                            <!-- Waktu Diagnosis -->
                             <div class="row">
-                                <div class="col-md-6">
-                                    <h6 class="text-muted mb-2">Tingkat Keyakinan Diagnosis</h6>
-                                    <div class="progress mb-2" style="height: 25px;">
-                                        <div class="progress-bar bg-primary" role="progressbar" 
-                                             data-width="{{ (diagnosis.confidence or 0) * 100 }}"
-                                             aria-valuenow="{{ (diagnosis.confidence or 0) * 100 }}" 
-                                             aria-valuemin="0" aria-valuemax="100">
-                                            <strong>{{ "%.1f"|format((diagnosis.confidence or 0) * 100) }}%</strong>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
+                                <div class="col-md-12">
                                     <h6 class="text-muted mb-2">Waktu Diagnosis</h6>
                                     <p class="fw-bold">
                                         {% if diagnosis.timestamp %}
@@ -187,54 +190,12 @@
                                     </p>
                                 </div>
                             </div>
-
-                            <!-- All Possible Diagnoses (Same Severity Only) -->
-                            {% if diagnosis.diagnosis.semua_diagnosis %}
-                            {% set same_severity_diagnoses = [] %}
-                            {% for alt_diag in diagnosis.diagnosis.semua_diagnosis %}
-                                {% if alt_diag.severity == diagnosis.severity %}
-                                    {% set _ = same_severity_diagnoses.append(alt_diag) %}
-                                {% endif %}
-                            {% endfor %}
-                            {% if same_severity_diagnoses|length > 0 %}
-                            <div class="mt-4">
-                                <h6 class="text-muted mb-3">Kemungkinan Diagnosis Lainnya (Tingkat Keparahan: {{ diagnosis.severity|upper }})</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-sm table-hover">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>Diagnosis</th>
-                                                <th>Skor Cocok</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for alt_diag in same_severity_diagnoses %}
-                                            <tr>
-                                                <td>{{ alt_diag.nama }}</td>
-                                                <td>
-                                                    <div class="progress" style="height: 20px;">
-                                                        <div class="progress-bar" role="progressbar"
-                                                             data-width="{{ (alt_diag.score or 0) * 100 }}"
-                                                             aria-valuenow="{{ (alt_diag.score or 0) * 100 }}" 
-                                                             aria-valuemin="0" aria-valuemax="100">
-                                                            {{ "%.1f"|format((alt_diag.score or 0) * 100) }}%
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            {% endif %}
-                            {% endif %}
                         </div>
                     </div>
                     {% else %}
                     <div class="alert alert-info alert-dismissible fade show" role="alert">
                         <i class="fas fa-info-circle me-2"></i>
-                        <strong>Belum Ada Diagnosis.</strong> Prediction ini belum didiagnosis oleh sistem pakar.
+                        <strong>Belum Ada Diagnosis.</strong> Prediksi ini belum didiagnosis oleh sistem pakar.
                         <a href="{{ url_for('expert_system_page') }}" class="alert-link">Lakukan diagnosis sekarang.</a>
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>

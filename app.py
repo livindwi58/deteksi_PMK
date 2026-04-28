@@ -169,7 +169,12 @@ def _serialize_prediction_row(prediction_row):
 
     pred_id = prediction_row.get('id')
     prediction = str(prediction_row.get('prediction') or '').lower()
-    confidence = float(prediction_row.get('confidence') or 0.0)
+    source = str(prediction_row.get('source') or 'image_processing')
+    diagnosis_label = prediction_row.get('diagnosis_label')
+    confidence_value = prediction_row.get('confidence')
+    confidence = float(confidence_value or 0.0)
+    show_confidence = source != 'manual_expert_system'
+    display_label = diagnosis_label if source == 'manual_expert_system' and diagnosis_label else ('Positif PMK' if prediction == 'sakit' else 'Sehat')
 
     return {
         'id': pred_id,
@@ -177,8 +182,12 @@ def _serialize_prediction_row(prediction_row):
         'filename': prediction_row.get('filename') or '',
         'image_path': prediction_row.get('image_path') or '',
         'prediction': prediction,
+        'source': source,
+        'diagnosis_label': diagnosis_label,
+        'display_label': display_label,
         'prediction_label': 'Positif PMK' if prediction == 'sakit' else 'Sehat',
-        'confidence': round(confidence, 1),
+        'confidence': round(confidence, 1) if show_confidence else None,
+        'show_confidence': show_confidence,
         'timestamp': prediction_row.get('timestamp'),
         'detail_url': url_for('detail_deteksi', pred_id=pred_id),
         'image_url': url_for('uploaded_file', filename=prediction_row.get('filename') or '') if prediction_row.get('filename') else None,
@@ -218,6 +227,7 @@ def get_data_riwayat_deteksi():
 
     recent = []
     total_confidence = 0.0
+    confidence_count = 0
     positif = 0
     negatif = 0
 
@@ -236,7 +246,9 @@ def get_data_riwayat_deteksi():
             continue
 
         recent.append(serialized)
-        total_confidence += float(serialized.get('confidence') or 0.0)
+        if serialized.get('show_confidence') and serialized.get('confidence') is not None:
+            total_confidence += float(serialized.get('confidence') or 0.0)
+            confidence_count += 1
         if serialized['prediction'] == 'sakit':
             positif += 1
         elif serialized['prediction'] == 'sehat':
@@ -247,7 +259,7 @@ def get_data_riwayat_deteksi():
         'total': total,
         'positif': positif,
         'negatif': negatif,
-        'akurasi_rata_rata': round(total_confidence / total, 1) if total else 0.0,
+        'akurasi_rata_rata': round(total_confidence / confidence_count, 1) if confidence_count else 0.0,
     }
 
     return jsonify({
@@ -483,6 +495,7 @@ def predict():
             'confidence': confidence,
             'features_table': features_table,
             'filepath': filepath,
+            'source': 'image_processing',
             'db_id': existing_db_id
         }
 
@@ -616,14 +629,10 @@ def expert_system_page():
                 diag_list = diagnosis['diagnosis']
                 main_diag = diag_list[0]
                 
-                # Tentukan prediction berdasarkan severity
+                # Diagnosis dari sistem pakar berarti PMK terdeteksi,
+                # jadi hasil deteksi disimpan sebagai sakit/positif PMK.
                 severity = main_diag.get('severity', 'sedang')
-                if severity == 'berat':
-                    prediction = 'sakit'
-                elif severity == 'sedang':
-                    prediction = 'sakit'
-                else:
-                    prediction = 'sehat'
+                prediction = 'sakit'
                 
                 confidence = main_diag.get('score', 0.5)
                 
@@ -644,8 +653,14 @@ def expert_system_page():
                     features_dict=features_dict
                 )
                 try:
-                    session.setdefault('last_prediction', {})
-                    session['last_prediction']['db_id'] = int(prediction_id)
+                    session['last_prediction'] = {
+                        'db_id': int(prediction_id),
+                        'filename': 'manual_expert_system',
+                        'original_filename': 'Diagnosis Sistem Pakar (Manual)',
+                        'prediction': prediction,
+                        'confidence': float(confidence),
+                        'source': 'manual_expert_system'
+                    }
                 except Exception:
                     pass
                 print(f"✓ Created prediction entry for manual expert system diagnosis, id={prediction_id}")
@@ -686,7 +701,6 @@ def expert_system_page():
                     prediction_id=prediction_id,
                     diagnosis_dict=diagnosis_details,
                     severity=severity,
-                    confidence=float(score),
                     timestamp=datetime.datetime.utcnow()
                 )
                 diagnosis['saved_diagnosis_id'] = diag_id
@@ -697,13 +711,14 @@ def expert_system_page():
                 import traceback
                 traceback.print_exc()
         
-        # Jika ada hasil prediksi sebelumnya, tambahkan ke konteks
+        # Jika ada hasil prediksi berbasis image processing sebelumnya, tambahkan ke konteks
+        last_prediction = session.get('last_prediction', {})
         image_info = None
-        if 'last_prediction' in session:
+        if last_prediction.get('source') == 'image_processing':
             image_info = {
-                'filename': session['last_prediction']['original_filename'],
-                'prediction': session['last_prediction']['prediction'],
-                'confidence': session['last_prediction']['confidence']
+                'filename': last_prediction.get('original_filename', ''),
+                'prediction': last_prediction.get('prediction', ''),
+                'confidence': last_prediction.get('confidence', 0)
             }
         
         return render_template('expert_system.html', 
@@ -714,13 +729,14 @@ def expert_system_page():
                              image_info=image_info)
     
     # GET request - tampilkan form
-    # Ambil informasi gambar dari session jika ada
+    # Ambil informasi gambar dari session jika hasil sebelumnya berasal dari image processing
+    last_prediction = session.get('last_prediction', {})
     image_info = None
-    if 'last_prediction' in session:
+    if last_prediction.get('source') == 'image_processing':
         image_info = {
-            'filename': session['last_prediction']['original_filename'],
-            'prediction': session['last_prediction']['prediction'],
-            'confidence': session['last_prediction']['confidence']
+            'filename': last_prediction.get('original_filename', ''),
+            'prediction': last_prediction.get('prediction', ''),
+            'confidence': last_prediction.get('confidence', 0)
         }
     
     return render_template('expert_system.html', 
@@ -825,7 +841,6 @@ def riwayat_diagnosis():
                         'gejala': ','.join(gejala_list) if isinstance(gejala_list, list) else str(gejala_list),
                         'diagnosis': diagnosis_obj.get('nama', 'Tidak diketahui'),
                         'severity': r.get('severity', 'sedang'),
-                        'confidence': r.get('confidence') or 0.0,
                         'rekomendasi': '|'.join(solusi_list) if isinstance(solusi_list, list) else str(solusi_list)
                     })
                 data_source = 'mysql'
