@@ -40,6 +40,34 @@ def get_symptom_desc(symptom_code):
     return kb.gejala.get(symptom_code, symptom_code)
 
 
+def _serialize_knowledge_base():
+    """Return the current expert knowledge in JSON-serializable form."""
+    return {
+        'source': 'mysql' if MYSQL_AVAILABLE else 'builtin',
+        'gejala': dict(expert_system.get_gejala_list()),
+        'gejala_groups': dict(expert_system.get_gejala_groups()),
+        'penyakit': dict(expert_system.kb.penyakit),
+        'aturan': list(expert_system.kb.aturan),
+    }
+
+
+@app.route('/api/expert-knowledge')
+def api_expert_knowledge():
+    """Expose PMK expert knowledge as JSON."""
+    return jsonify(_serialize_knowledge_base())
+
+
+@app.route('/api/gejala')
+def api_gejala():
+    """Expose the PMK gejala master list as JSON."""
+    payload = _serialize_knowledge_base()
+    return jsonify({
+        'source': payload['source'],
+        'gejala': payload['gejala'],
+        'gejala_groups': payload['gejala_groups'],
+    })
+
+
 try:
     from utils.mysql_db import (
         save_prediction_mysql,

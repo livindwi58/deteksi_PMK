@@ -292,6 +292,50 @@ DEFAULT_EXPERT_RULES = [
     },
 ]
 
+
+def get_builtin_expert_knowledge():
+    """Return expert knowledge from the repository defaults when MySQL is unavailable."""
+    gejala = OrderedDict()
+    penyakit = OrderedDict()
+    aturan = []
+    grouped_codes = {k: [] for k in _GROUP_TITLES.keys()}
+
+    for item in DEFAULT_EXPERT_SYMPTOMS:
+        gejala[item['code']] = item['description']
+        category = (item.get('category') or 'umum').lower()
+        if category not in grouped_codes:
+            grouped_codes[category] = []
+        grouped_codes[category].append(item['code'])
+
+    for item in DEFAULT_EXPERT_DISEASES:
+        penyakit[item['code']] = {
+            'nama': item['name'],
+            'deskripsi': item['description'],
+            'solusi': list(item.get('solutions', [])),
+        }
+
+    for item in DEFAULT_EXPERT_RULES:
+        aturan.append({
+            'kode': item['code'],
+            'gejala': list(item.get('symptom_codes', [])),
+            'hasil': item['result_disease_code'],
+            'deskripsi': item.get('description', ''),
+        })
+
+    gejala_groups = OrderedDict()
+    for key, title in _GROUP_TITLES.items():
+        gejala_groups[key] = {
+            'title': title,
+            'codes': grouped_codes.get(key, []),
+        }
+
+    return {
+        'gejala': dict(gejala),
+        'penyakit': dict(penyakit),
+        'aturan': aturan,
+        'gejala_groups': gejala_groups,
+    }
+
 _GROUP_TITLES = OrderedDict([
     ('umum', 'Gejala Umum / Sistemik'),
     ('mulut', 'Gejala Mulut / Oral'),
