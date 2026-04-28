@@ -31,21 +31,20 @@ def _normalize_port(value, default='3306'):
 
 def _build_database_uri():
     """Build a SQLAlchemy database URI from Railway or local environment variables."""
-    if DATABASE_URL:
-        try:
-            url = make_url(DATABASE_URL)
-            if url.drivername == 'mysql':
-                url = url.set(drivername='mysql+pymysql')
-            return str(url)
-        except Exception as e:
-            print(f"[MYSQL] Ignoring invalid DATABASE_URL: {e}")
-
     db_host = (os.environ.get('DB_HOST') or os.environ.get('MYSQLHOST') or '').strip()
     db_user = (os.environ.get('DB_USER') or os.environ.get('MYSQLUSER') or '').strip()
     db_password = os.environ.get('DB_PASSWORD') or os.environ.get('MYSQLPASSWORD', '')
     db_name = (os.environ.get('DB_NAME') or os.environ.get('MYSQLDATABASE') or '').strip()
 
     if not db_host or not db_user or not db_name:
+        if DATABASE_URL:
+            try:
+                url = make_url(DATABASE_URL)
+                if url.drivername == 'mysql':
+                    url = url.set(drivername='mysql+pymysql')
+                return str(url)
+            except Exception:
+                return None
         return None
 
     db_port = _normalize_port(os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT'))
