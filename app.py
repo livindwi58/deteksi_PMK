@@ -642,6 +642,45 @@ def expert_system_page():
 
         prediction_id = session.get('last_prediction', {}).get('db_id') if use_image_context else None
 
+        if MYSQL_AVAILABLE and diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis') and not use_image_context:
+            try:
+                diag_list = diagnosis['diagnosis']
+                main_diag = diag_list[0]
+                severity = main_diag.get('severity', 'sedang')
+                score = main_diag.get('score', 0)
+
+                features_dict = {
+                    'diagnosis_method': 'manual_expert_system',
+                    'mode': 'manual',
+                    'severity': severity,
+                    'gejala_selected': gejala_terpilih,
+                }
+
+                prediction_id = save_prediction_mysql(
+                    original_filename='Diagnosis Sistem Pakar (Manual)',
+                    filename='manual_expert_system',
+                    image_path='manual_expert_system',
+                    prediction='sakit',
+                    confidence=float(score),
+                    features_dict=features_dict,
+                    timestamp=datetime.datetime.utcnow(),
+                )
+
+                session['last_prediction'] = {
+                    'db_id': int(prediction_id),
+                    'filename': 'manual_expert_system',
+                    'original_filename': 'Diagnosis Sistem Pakar (Manual)',
+                    'prediction': 'sakit',
+                    'confidence': float(score),
+                    'source': 'manual_expert_system'
+                }
+                diagnosis['saved_prediction_id'] = int(prediction_id)
+                print(f"✓ Manual prediction saved to database, id={prediction_id}, severity={severity}")
+            except Exception as e:
+                print(f"✗ Error creating manual prediction entry: {e}")
+                import traceback
+                traceback.print_exc()
+
         # Save diagnosis ke database. Jalur manual tidak lagi dipaksa terikat ke gambar.
         if MYSQL_AVAILABLE and diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis'):
             try:
