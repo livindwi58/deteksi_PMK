@@ -663,7 +663,6 @@ def expert_system_page():
                     prediction='sakit',
                     confidence=float(score),
                     features_dict=features_dict,
-                    timestamp=datetime.datetime.utcnow(),
                 )
 
                 session['last_prediction'] = {
@@ -713,7 +712,6 @@ def expert_system_page():
                     prediction_id=prediction_id,
                     diagnosis_dict=diagnosis_details,
                     severity=severity,
-                    timestamp=datetime.datetime.utcnow()
                 )
                 diagnosis['saved_diagnosis_id'] = diag_id
                 if prediction_id:
@@ -815,7 +813,6 @@ def api_diagnosis():
                     prediction_id=prediction_id,
                     diagnosis_dict=diagnosis_details,
                     severity=severity,
-                    timestamp=datetime.datetime.utcnow()
                 )
                 diagnosis['saved_diagnosis_id'] = diag_id
                 if prediction_id:
