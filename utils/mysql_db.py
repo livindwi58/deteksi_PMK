@@ -21,18 +21,38 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 
 
 def _build_database_uri():
-    """Build a SQLAlchemy database URI from Railway or local environment variables."""
+    """Build a SQLAlchemy database URI from Railway or local environment variables.
+
+    Priority:
+    1. Individual Railway reference variables (MYSQLHOST, MYSQLPORT, MYSQLUSER,
+       MYSQLPASSWORD, MYSQLDATABASE) — most reliable when set via Railway reference vars.
+    2. DATABASE_URL — used as a fallback if the individual variables are absent.
+    """
+    mysql_host = os.environ.get('MYSQLHOST')
+    mysql_port = os.environ.get('MYSQLPORT')
+    mysql_user = os.environ.get('MYSQLUSER')
+    mysql_password = os.environ.get('MYSQLPASSWORD')  # may be empty string — that is valid
+    mysql_database = os.environ.get('MYSQLDATABASE')
+
+    if mysql_host and mysql_user and mysql_database:
+        db_port = mysql_port or '3306'
+        db_password = mysql_password if mysql_password is not None else ''
+        if db_password:
+            return f"mysql+pymysql://{mysql_user}:{db_password}@{mysql_host}:{db_port}/{mysql_database}"
+        return f"mysql+pymysql://{mysql_user}@{mysql_host}:{db_port}/{mysql_database}"
+
     if DATABASE_URL:
         url = make_url(DATABASE_URL)
         if url.drivername == 'mysql':
             url = url.set(drivername='mysql+pymysql')
         return str(url)
 
-    db_host = os.environ.get('DB_HOST') or os.environ.get('MYSQLHOST', 'localhost')
-    db_port = os.environ.get('DB_PORT') or os.environ.get('MYSQLPORT', '3306')
-    db_user = os.environ.get('DB_USER') or os.environ.get('MYSQLUSER', 'root')
-    db_password = os.environ.get('DB_PASSWORD') or os.environ.get('MYSQLPASSWORD', '')
-    db_name = os.environ.get('DB_NAME') or os.environ.get('MYSQLDATABASE', 'deteksi_pmk')
+    # Last-resort local defaults
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_port = os.environ.get('DB_PORT', '3306')
+    db_user = os.environ.get('DB_USER', 'root')
+    db_password = os.environ.get('DB_PASSWORD', '')
+    db_name = os.environ.get('DB_NAME', 'deteksi_pmk')
 
     if db_password:
         return f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
