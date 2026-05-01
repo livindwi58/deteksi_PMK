@@ -47,6 +47,9 @@
                         <a href="{{ url_for('upload') }}" class="btn btn-success btn-lg w-100">
                             <i class="fas fa-upload me-2"></i>Upload Gambar
                         </a>
+                        <a href="{{ url_for('expert_system_page', mode='manual') }}" class="btn btn-outline-success btn-lg w-100 mt-2">
+                            <i class="fas fa-brain me-2"></i>Sistem Pakar Langsung
+                        </a>
                     </div>
                 </div>
             </div>
@@ -79,56 +82,13 @@
                             <div class="card-body">
                                 <div class="step-circle mx-auto">3</div>
                                 <h5>Diagnosis Lanjutan</h5>
-                                <p class="text-muted">Jika terdeteksi sakit, lanjut ke sistem pakar untuk diagnosis lengkap</p>
+                                <p class="text-muted">Jika terdeteksi sakit, lanjut ke sistem pakar untuk diagnosis lengkap. Atau gunakan sistem pakar langsung tanpa gambar.</p>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <!-- Riwayat Terbaru -->
-        {% if history %}
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Riwayat Deteksi Terbaru</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Waktu</th>
-                                        <th>Gambar</th>
-                                        <th>Hasil</th>
-                                        <th>Keyakinan</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for item in history %}
-                                    <tr>
-                                        <td>{{ item.timestamp }}</td>
-                                        <td>{{ item.image_path }}</td>
-                                        <td>
-                                            {% if item.prediction == 'sakit' %}
-                                                <span class="badge bg-warning text-dark">Positif PMK</span>
-                                            {% else %}
-                                                <span class="badge bg-success">Sehat</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ "%.2f"|format(item.confidence) }}%</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
 <style>
 .feature-icon {
     width: 100px;

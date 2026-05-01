@@ -194,6 +194,20 @@ def _serialize_prediction_row(prediction_row):
     }
 
 
+def _history_sort_timestamp(value):
+    parsed = pd.to_datetime(value, errors='coerce')
+    if pd.isna(parsed):
+        return pd.Timestamp.min
+    return parsed
+
+
+def _history_sort_id(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 @app.route('/get_data_riwayat_deteksi', methods=['POST'])
 @app.route('/api/get_data_riwayat_deteksi', methods=['POST'])
 def get_data_riwayat_deteksi():
@@ -218,12 +232,7 @@ def get_data_riwayat_deteksi():
         except (TypeError, ValueError):
             continue
 
-    ordered_ids = []
-    seen = set()
-    for pred_id in normalized_ids:
-        if pred_id not in seen:
-            ordered_ids.append(pred_id)
-            seen.add(pred_id)
+    ordered_ids = sorted(set(normalized_ids), reverse=True)
 
     recent = []
     total_confidence = 0.0
@@ -253,6 +262,15 @@ def get_data_riwayat_deteksi():
             positif += 1
         elif serialized['prediction'] == 'sehat':
             negatif += 1
+
+    recent = sorted(
+        recent,
+        key=lambda item: (
+            _history_sort_id(item.get('id')),
+            _history_sort_timestamp(item.get('timestamp')),
+        ),
+        reverse=True,
+    )
 
     total = len(recent)
     stats = {
@@ -607,6 +625,10 @@ def result_sick():
 @app.route('/expert-system', methods=['GET', 'POST'])
 def expert_system_page():
     """Halaman sistem pakar forward chaining"""
+    mode = request.form.get('mode') if request.method == 'POST' else request.args.get('mode', 'manual')
+    mode = (mode or 'manual').strip().lower()
+    use_image_context = mode != 'manual'
+
     if request.method == 'POST':
         # Dapatkan gejala yang dipilih
         gejala_terpilih = request.form.getlist('gejala')
@@ -617,60 +639,11 @@ def expert_system_page():
         
         # Dapatkan diagnosis
         diagnosis = expert_system.get_diagnosis()
-        
-        # Get prediction_id dari session untuk Foreign Key
-        prediction_id = session.get('last_prediction', {}).get('db_id')
-        
-        # Jika tidak ada prediction_id (diagnosis langsung dari sistem pakar tanpa scan)
-        # Buatkan entry dummy di predictions table
-        if not prediction_id and diagnosis.get('status') == 'terdiagnosis' and MYSQL_AVAILABLE:
-            try:
-                # Ambil diagnosis utama
-                diag_list = diagnosis['diagnosis']
-                main_diag = diag_list[0]
-                
-                # Diagnosis dari sistem pakar berarti PMK terdeteksi,
-                # jadi hasil deteksi disimpan sebagai sakit/positif PMK.
-                severity = main_diag.get('severity', 'sedang')
-                prediction = 'sakit'
-                
-                confidence = main_diag.get('score', 0.5)
-                
-                # Buat entry yang menunjukkan diagnosis manual dari sistem pakar
-                features_dict = {
-                    'diagnosis_method': 'manual_expert_system',
-                    'severity': severity,
-                    'gejala_selected': gejala_terpilih
-                }
-                
-                # Save prediction untuk diagnosis manual
-                prediction_id = save_prediction_mysql(
-                    original_filename='Diagnosis Sistem Pakar (Manual)',
-                    filename='manual_expert_system',
-                    image_path='manual_expert_system',
-                    prediction=prediction,
-                    confidence=float(confidence),
-                    features_dict=features_dict
-                )
-                try:
-                    session['last_prediction'] = {
-                        'db_id': int(prediction_id),
-                        'filename': 'manual_expert_system',
-                        'original_filename': 'Diagnosis Sistem Pakar (Manual)',
-                        'prediction': prediction,
-                        'confidence': float(confidence),
-                        'source': 'manual_expert_system'
-                    }
-                except Exception:
-                    pass
-                print(f"✓ Created prediction entry for manual expert system diagnosis, id={prediction_id}")
-            except Exception as e:
-                print(f"✗ Error creating prediction entry for manual diagnosis: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Save diagnosis ke database dengan FK ke predictions
-        if MYSQL_AVAILABLE and prediction_id and diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis'):
+
+        prediction_id = session.get('last_prediction', {}).get('db_id') if use_image_context else None
+
+        # Save diagnosis ke database. Jalur manual tidak lagi dipaksa terikat ke gambar.
+        if MYSQL_AVAILABLE and diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis'):
             try:
                 diag_list = diagnosis['diagnosis']
                 main_diag = diag_list[0]
@@ -704,8 +677,11 @@ def expert_system_page():
                     timestamp=datetime.datetime.utcnow()
                 )
                 diagnosis['saved_diagnosis_id'] = diag_id
-                diagnosis['saved_prediction_id'] = int(prediction_id)
-                print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}, severity={severity}")
+                if prediction_id:
+                    diagnosis['saved_prediction_id'] = int(prediction_id)
+                    print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}, severity={severity}")
+                else:
+                    print(f"✓ Manual diagnosis saved to database, id={diag_id}, severity={severity}")
             except Exception as e:
                 print(f"✗ Error saving diagnosis to MySQL: {e}")
                 import traceback
@@ -714,7 +690,7 @@ def expert_system_page():
         # Jika ada hasil prediksi berbasis image processing sebelumnya, tambahkan ke konteks
         last_prediction = session.get('last_prediction', {})
         image_info = None
-        if last_prediction.get('source') == 'image_processing':
+        if use_image_context and last_prediction.get('source') == 'image_processing':
             image_info = {
                 'filename': last_prediction.get('original_filename', ''),
                 'prediction': last_prediction.get('prediction', ''),
@@ -726,13 +702,14 @@ def expert_system_page():
                              gejala_groups=expert_system.get_gejala_groups(),
                              diagnosis=diagnosis,
                              selected_gejala=gejala_terpilih,
-                             image_info=image_info)
+                             image_info=image_info,
+                             context_mode='image' if use_image_context else 'manual')
     
     # GET request - tampilkan form
     # Ambil informasi gambar dari session jika hasil sebelumnya berasal dari image processing
     last_prediction = session.get('last_prediction', {})
     image_info = None
-    if last_prediction.get('source') == 'image_processing':
+    if use_image_context and last_prediction.get('source') == 'image_processing':
         image_info = {
             'filename': last_prediction.get('original_filename', ''),
             'prediction': last_prediction.get('prediction', ''),
@@ -742,14 +719,15 @@ def expert_system_page():
     return render_template('expert_system.html', 
                          gejala_list=expert_system.get_gejala_list(),
                          gejala_groups=expert_system.get_gejala_groups(),
-                         image_info=image_info)
+                         image_info=image_info,
+                         context_mode='image' if use_image_context else 'manual')
 
 
 @app.route('/expert-system/from-prediction')
 def expert_system_from_prediction():
     """Redirect ke sistem pakar dari hasil prediksi"""
     # Bisa tambahkan logika untuk pre-fill gejala berdasarkan hasil prediksi
-    return redirect(url_for('expert_system_page'))
+    return redirect(url_for('expert_system_page', mode='image'))
 
 
 @app.route('/api/diagnosis', methods=['POST'])
@@ -763,8 +741,8 @@ def api_diagnosis():
     expert_system.tambah_gejala(gejala)
     diagnosis = expert_system.get_diagnosis()
     
-    # Save diagnosis ke database jika MYSQL_AVAILABLE dan ada prediction_id
-    if MYSQL_AVAILABLE and prediction_id:
+    # Save diagnosis ke database jika MYSQL_AVAILABLE
+    if MYSQL_AVAILABLE:
         try:
             # Prepare diagnosis data
             if diagnosis.get('status') == 'terdiagnosis' and diagnosis.get('diagnosis'):
@@ -798,11 +776,13 @@ def api_diagnosis():
                     prediction_id=prediction_id,
                     diagnosis_dict=diagnosis_details,
                     severity=severity,
-                    confidence=float(score),
                     timestamp=datetime.datetime.utcnow()
                 )
                 diagnosis['saved_diagnosis_id'] = diag_id
-                print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}, severity={severity}")
+                if prediction_id:
+                    print(f"✓ Diagnosis saved to database, id={diag_id}, linked to prediction_id={prediction_id}, severity={severity}")
+                else:
+                    print(f"✓ Manual diagnosis saved to database, id={diag_id}, severity={severity}")
         except Exception as e:
             print(f"✗ Error saving diagnosis to database: {e}")
             import traceback
@@ -843,6 +823,11 @@ def riwayat_diagnosis():
                         'severity': r.get('severity', 'sedang'),
                         'rekomendasi': '|'.join(solusi_list) if isinstance(solusi_list, list) else str(solusi_list)
                     })
+                diagnosis_history = sorted(
+                    diagnosis_history,
+                    key=lambda item: _history_sort_timestamp(item.get('timestamp')),
+                    reverse=True,
+                )
                 data_source = 'mysql'
                 return render_template('diagnosis_history.html', history=diagnosis_history, data_source=data_source)
         except Exception as e:
@@ -855,6 +840,11 @@ def riwayat_diagnosis():
             if not df.empty:
                 df_recent = df.sort_values('timestamp', ascending=False).head(50)
                 diagnosis_history = df_recent.to_dict(orient='records')
+                diagnosis_history = sorted(
+                    diagnosis_history,
+                    key=lambda item: _history_sort_timestamp(item.get('timestamp')),
+                    reverse=True,
+                )
         except Exception as e:
             print(f"Error reading diagnosis history: {e}")
 

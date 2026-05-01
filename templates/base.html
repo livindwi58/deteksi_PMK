@@ -172,7 +172,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'expert_system_page' %}active{% endif %}" href="{{ url_for('expert_system_page') }}">
+                        <a class="nav-link {% if request.endpoint == 'expert_system_page' %}active{% endif %}" href="{{ url_for('expert_system_page', mode='manual') }}">
                             <i class="fas fa-brain me-1"></i>Sistem Pakar
                         </a>
                     </li>
@@ -214,7 +214,7 @@
                     <ul class="list-unstyled">
                             <li><a href="{{ url_for('index') }}" class="text-white">Home</a></li>
                             <li><a href="{{ url_for('riwayat_deteksi') }}" class="text-white">Riwayat Deteksi</a></li>
-                            <li><a href="{{ url_for('expert_system_page') }}" class="text-white">Sistem Pakar</a></li>
+                            <li><a href="{{ url_for('expert_system_page', mode='manual') }}" class="text-white">Sistem Pakar</a></li>
                     </ul>
             <hr class="bg-white">
             <div class="text-right">

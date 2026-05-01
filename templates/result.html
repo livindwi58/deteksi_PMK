@@ -21,7 +21,7 @@
 {% set recommendation_icon = 'fa-arrow-right text-warning' if is_sick else 'fa-check-circle text-success' %}
 {% set action_btn_class = 'btn-warning' if is_sick else 'btn-info' %}
 {% set action_btn_icon = 'fa-arrow-right' if is_sick else 'fa-stethoscope' %}
-{% set action_btn_text = 'Lanjut ke Sistem Pakar' if is_sick else 'Sistem Pakar' %}
+{% set action_btn_text = 'Lanjut ke Sistem Pakar dari Gambar' if is_sick else 'Sistem Pakar' %}
 {% set table_head_class = 'table-warning' if is_sick else 'table-success' %}
 
 <div class="row justify-content-center">
@@ -151,13 +151,11 @@
                     <a href="{{ url_for('upload') }}" class="btn btn-success btn-lg me-2">
                         <i class="fas fa-upload me-2"></i>Upload Gambar Lain
                     </a>
-                    <a href="{{ url_for('expert_system_page') }}" class="btn {{ action_btn_class }} btn-lg me-2">
+                    <a href="{{ url_for('expert_system_page', mode='image') }}" class="btn {{ action_btn_class }} btn-lg me-2">
                         <i class="fas {{ action_btn_icon }} me-2"></i>{{ action_btn_text }}
                     </a>
-                    {% set last_db = session.get('last_prediction', {}).get('db_id') %}
-                    <a href="{{ url_for('riwayat_deteksi') }}{% if last_db %}#pred-{{ last_db }}{% endif %}" class="btn btn-secondary btn-lg">
-                        <i class="fas fa-history me-2"></i>Riwayat Deteksi
-                    </a>
+                   
+                   
                 </div>
 
                 <div class="mt-3 text-center">

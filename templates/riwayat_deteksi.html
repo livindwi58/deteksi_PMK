@@ -201,7 +201,17 @@ function exportData(format) {
 function loadLocalStorageIds() {
     try {
         const value = JSON.parse(localStorage.getItem('pmk_predictions_ids') || '[]');
-        return Array.isArray(value) ? [...new Set(value.map(String))] : [];
+        if (!Array.isArray(value)) {
+            return [];
+        }
+
+        const numericIds = value
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id));
+
+        return [...new Set(numericIds)]
+            .sort((a, b) => b - a)
+            .map((id) => String(id));
     } catch (e) {
         return [];
     }
@@ -221,6 +231,17 @@ function formatTimestamp(timestamp) {
     } catch (e) {
         return timestamp;
     }
+}
+
+function compareHistoryItemsDesc(a, b) {
+    const idDiff = Number(b.id || 0) - Number(a.id || 0);
+    if (idDiff !== 0) {
+        return idDiff;
+    }
+
+    const timestampA = String(a.timestamp || '');
+    const timestampB = String(b.timestamp || '');
+    return timestampB.localeCompare(timestampA);
 }
 
 function createHistoryRow(item) {
@@ -315,6 +336,7 @@ async function loadRiwayatDeteksi() {
 
         const recent = Array.isArray(payload.recent) ? payload.recent : [];
         const stats = payload.stats || { total: 0, positif: 0, negatif: 0, akurasi_rata_rata: 0 };
+        recent.sort(compareHistoryItemsDesc);
 
         if (tableBody) {
             tableBody.innerHTML = '';

@@ -176,20 +176,6 @@
                                 </ul>
                             </div>
                             {% endif %}
-
-                            <!-- Waktu Diagnosis -->
-                            <div class="row">
-                                <div class="col-md-12">
-                                    <h6 class="text-muted mb-2">Waktu Diagnosis</h6>
-                                    <p class="fw-bold">
-                                        {% if diagnosis.timestamp %}
-                                            {{ diagnosis.timestamp[:19] | replace('T', ' ') }}
-                                        {% else %}
-                                            N/A
-                                        {% endif %}
-                                    </p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                     {% else %}

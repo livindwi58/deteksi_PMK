@@ -10,6 +10,7 @@
                 <h4 class="mb-0"><i class="fas fa-stethoscope me-2"></i>Sistem Pakar Forward Chaining - Diagnosis PMK</h4>
             </div>
             <div class="card-body">
+                {% set is_image_mode = context_mode == 'image' %}
                 
                 <!-- Breadcrumb -->
                 <nav aria-label="breadcrumb">
@@ -22,8 +23,19 @@
                 <!-- Info Panel -->
                 <div class="alert alert-info mb-4">
                     <i class="fas fa-info-circle me-2"></i>
-                    <strong>Cara Penggunaan:</strong> Pilih gejala yang Anda amati pada sapi, kemudian klik tombol "Diagnosis" untuk mendapatkan hasil.
+                    <strong>Cara Penggunaan:</strong> Pilih gejala yang Anda amati pada sapi, kemudian klik tombol diagnosis untuk mendapatkan hasil.
                 </div>
+                {% if is_image_mode %}
+                <div class="alert alert-success mb-4">
+                    <i class="fas fa-image me-2"></i>
+                    Mode ini mengikuti hasil deteksi gambar sebelumnya.
+                </div>
+                {% else %}
+                <div class="alert alert-secondary mb-4">
+                    <i class="fas fa-brain me-2"></i>
+                    Mode ini berjalan langsung sebagai sistem pakar tanpa keterikatan gambar.
+                </div>
+                {% endif %}
                 
                 {% if image_info %}
                 <div class="alert alert-success mb-4">
@@ -143,7 +155,7 @@
                                 <button class="btn btn-success" onclick="window.print()">
                                     <i class="fas fa-print me-2"></i>Cetak Hasil
                                 </button>
-                                <a href="{{ url_for('expert_system_page') }}" class="btn btn-primary">
+                                <a href="{{ url_for('expert_system_page', mode=context_mode) }}" class="btn btn-primary">
                                     <i class="fas fa-redo me-2"></i>Konsultasi Lagi
                                 </a>
                                 <a href="{{ url_for('index') }}" class="btn btn-secondary">
@@ -157,7 +169,7 @@
                                 {{ diagnosis.message }}
                             </div>
                             <div class="text-center">
-                                <a href="{{ url_for('expert_system_page') }}" class="btn btn-primary">
+                                <a href="{{ url_for('expert_system_page', mode=context_mode) }}" class="btn btn-primary">
                                     <i class="fas fa-redo me-2"></i>Coba Lagi
                                 </a>
                             </div>
@@ -166,7 +178,8 @@
 
                 {% else %}
                     <!-- Form Gejala -->
-                    <form method="POST" action="{{ url_for('expert_system_page') }}" id="expertForm">
+                    <form method="POST" action="{{ url_for('expert_system_page', mode=context_mode) }}" id="expertForm">
+                        <input type="hidden" name="mode" value="{{ context_mode }}">
                         <div class="mb-4">
                             <h5 class="mb-3"><i class="fas fa-list-ul me-2"></i>Pilih Gejala yang Diamati:</h5>
                             
@@ -208,7 +221,7 @@
                         <!-- Action Buttons -->
                         <div class="mt-4 text-center">
                             <button type="submit" class="btn btn-success btn-lg">
-                                <i class="fas fa-diagnoses me-2"></i>Diagnosis
+                                <i class="fas fa-diagnoses me-2"></i>{% if is_image_mode %}Diagnosis dari Gambar{% else %}Diagnosis Langsung{% endif %}
                             </button>
                             <button type="reset" class="btn btn-secondary btn-lg">
                                 <i class="fas fa-undo me-2"></i>Reset

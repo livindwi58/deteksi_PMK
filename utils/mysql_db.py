@@ -662,12 +662,12 @@ def get_prediction_by_id(pred_id):
         return None
 
 
-def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', timestamp=None):
+def save_diagnosis_mysql(prediction_id=None, diagnosis_dict=None, severity='sedang', timestamp=None):
     """
     Save diagnosis result from expert system to database
     
     Args:
-        prediction_id: Foreign Key ke predictions table (prediction yang di-diagnosa)
+        prediction_id: Foreign Key ke predictions table (prediction yang di-diagnosa). Optional.
         diagnosis_dict: Dictionary of diagnosis details from expert system
         severity: 'ringan', 'sedang', or 'berat'
         timestamp: Optional datetime, defaults to now
@@ -678,6 +678,8 @@ def save_diagnosis_mysql(prediction_id, diagnosis_dict, severity='sedang', times
     try:
         session = Session()
         
+        diagnosis_dict = diagnosis_dict or {}
+
         # Convert diagnosis dict to JSON string
         diagnosis_json = json.dumps(diagnosis_dict, default=str)
         
