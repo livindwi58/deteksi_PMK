@@ -30,6 +30,8 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 UPLOAD_RESIZE_FOLDER = os.path.join(UPLOAD_FOLDER, 'resize')
 os.makedirs(UPLOAD_RESIZE_FOLDER, exist_ok=True)
+UPLOAD_THRESHOLD_FOLDER = os.path.join(UPLOAD_FOLDER, 'threshold')
+os.makedirs(UPLOAD_THRESHOLD_FOLDER, exist_ok=True)
 
 # Inisialisasi sistem pakar dan knowledge base
 expert_system = ForwardChaining()
@@ -428,12 +430,20 @@ def predict():
 
         resized_filename = filename
         resized_filepath = os.path.join(UPLOAD_RESIZE_FOLDER, resized_filename)
+        threshold_filename = filename
+        threshold_filepath = os.path.join(UPLOAD_THRESHOLD_FOLDER, threshold_filename)
         try:
             cv2.imwrite(resized_filepath, img_resized)
             print(f"[PREDICT] ✓ Resized image saved: {resized_filepath}")
         except Exception as save_err:
             print(f"[PREDICT] ⚠️ Gagal menyimpan resized image: {save_err}")
             resized_filepath = None
+        try:
+            cv2.imwrite(threshold_filepath, gray_processed)
+            print(f"[PREDICT] ✓ Threshold image saved: {threshold_filepath}")
+        except Exception as save_err:
+            print(f"[PREDICT] ⚠️ Gagal menyimpan threshold image: {save_err}")
+            threshold_filepath = None
         features = extractor.extract_all_features(img_rgb, gray_processed)
         features_scaled = scaler.transform([features])
 
@@ -528,6 +538,8 @@ def predict():
             'filepath': filepath,
             'resized_filename': resized_filename if resized_filepath else None,
             'resized_filepath': resized_filepath,
+            'threshold_filename': threshold_filename if threshold_filepath else None,
+            'threshold_filepath': threshold_filepath,
             'source': 'image_processing',
             'db_id': existing_db_id
         }
