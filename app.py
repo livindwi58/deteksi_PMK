@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, send_from_
 import io
 import datetime
 import os
+import cv2
 from werkzeug.utils import secure_filename
 import pandas as pd
 import uuid
@@ -27,6 +28,8 @@ app = Flask(__name__,
 app.secret_key = os.environ.get('FLASK_SECRET', 'change-me')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+UPLOAD_RESIZE_FOLDER = os.path.join(UPLOAD_FOLDER, 'resize')
+os.makedirs(UPLOAD_RESIZE_FOLDER, exist_ok=True)
 
 # Inisialisasi sistem pakar dan knowledge base
 expert_system = ForwardChaining()
@@ -421,6 +424,16 @@ def predict():
 
         # Preprocess and extract
         img_rgb, gray_processed = preprocess_pipeline(filepath)
+        _, img_resized, _ = preprocess_image(filepath)
+
+        resized_filename = filename
+        resized_filepath = os.path.join(UPLOAD_RESIZE_FOLDER, resized_filename)
+        try:
+            cv2.imwrite(resized_filepath, img_resized)
+            print(f"[PREDICT] ✓ Resized image saved: {resized_filepath}")
+        except Exception as save_err:
+            print(f"[PREDICT] ⚠️ Gagal menyimpan resized image: {save_err}")
+            resized_filepath = None
         features = extractor.extract_all_features(img_rgb, gray_processed)
         features_scaled = scaler.transform([features])
 
@@ -513,6 +526,8 @@ def predict():
             'confidence': confidence,
             'features_table': features_table,
             'filepath': filepath,
+            'resized_filename': resized_filename if resized_filepath else None,
+            'resized_filepath': resized_filepath,
             'source': 'image_processing',
             'db_id': existing_db_id
         }
