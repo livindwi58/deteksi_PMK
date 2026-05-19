@@ -2,11 +2,37 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+import cv2
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 import matplotlib.pyplot as plt
 from utils.preprocessing import preprocess_image, preprocess_pipeline
 from utils.feature_extraction import FeatureExtractor
+
+
+def _save_preprocessed_training_images(img_path, class_name, original_filename, img_resized, gray_processed,
+                                       resize_dir, threshold_dir):
+    """Save resized and thresholded training images for later inspection."""
+    os.makedirs(resize_dir, exist_ok=True)
+    os.makedirs(threshold_dir, exist_ok=True)
+
+    base_name, ext = os.path.splitext(original_filename)
+    safe_base = f"{class_name}_{base_name}" if class_name else base_name
+    safe_base = safe_base.replace(' ', '_')
+    ext = ext.lower() if ext else '.png'
+
+    resized_path = os.path.join(resize_dir, f"{safe_base}{ext}")
+    threshold_path = os.path.join(threshold_dir, f"{safe_base}{ext}")
+
+    try:
+        cv2.imwrite(resized_path, img_resized)
+    except Exception as e:
+        print(f"  ⚠️ Gagal menyimpan resized training image {img_path}: {e}")
+
+    try:
+        cv2.imwrite(threshold_path, gray_processed)
+    except Exception as e:
+        print(f"  ⚠️ Gagal menyimpan threshold training image {img_path}: {e}")
 
 def prepare_dataset(data_dir='dataset'):
     """
@@ -23,6 +49,9 @@ def prepare_dataset(data_dir='dataset'):
         'healthy': 'sehat',
         'sick': 'sakit'
     }
+
+    resize_dir = os.path.join('uploads', 'resize')
+    threshold_dir = os.path.join('uploads', 'threshold')
     
     for class_name, label in class_dirs.items():
         class_dir = os.path.join(data_dir, class_name)
@@ -34,9 +63,20 @@ def prepare_dataset(data_dir='dataset'):
                 if img_file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
                     img_path = os.path.join(class_dir, img_file)
                     try:
+                        _, img_resized, _ = preprocess_image(img_path, target_size=(128, 128))
                         # Use threshold-based preprocessing pipeline
                         # Returns: img_rgb (for RGB features), gray_processed (for GLCM)
                         img_rgb, gray_eq = preprocess_pipeline(img_path, target_size=(128, 128))
+
+                        _save_preprocessed_training_images(
+                            img_path=img_path,
+                            class_name=class_name,
+                            original_filename=img_file,
+                            img_resized=img_resized,
+                            gray_processed=gray_eq,
+                            resize_dir=resize_dir,
+                            threshold_dir=threshold_dir,
+                        )
                         
                         # Extract features (RGB averages + GLCM dari preprocessing pipeline)
                         img_features = extractor.extract_all_features(img_rgb, gray_eq)
