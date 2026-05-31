@@ -353,7 +353,7 @@ def api_validate_image():
             file.save(temp_filepath)
         
         # Validasi gambar
-        is_cattle, confidence, reason = validate_cattle_image(temp_filepath, confidence_threshold=0.75)
+        is_cattle, confidence, reason = validate_cattle_image(temp_filepath, confidence_threshold=0.65)
         
         if is_cattle:
             result = {
@@ -410,7 +410,7 @@ def predict():
         # Validasi ulang di backend supaya request langsung ke /predict tidak bisa bypass.
         is_cattle, validation_confidence, validation_reason = validate_cattle_image(
             filepath,
-            confidence_threshold=0.75,
+            confidence_threshold=0.65,
         )
         if not is_cattle:
             if os.path.exists(filepath):

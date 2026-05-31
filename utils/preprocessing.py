@@ -3,7 +3,32 @@ import numpy as np
 from PIL import Image
 
 
-def validate_cattle_image(image_path, confidence_threshold=0.75):
+def _detect_human_face(gray_image):
+    """Return (detected, face_area_ratio) for human face detection."""
+    try:
+        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        face_cascade = cv2.CascadeClassifier(cascade_path)
+        if face_cascade.empty():
+            return False, 0.0
+
+        faces = face_cascade.detectMultiScale(
+            gray_image,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(50, 50),
+        )
+        if len(faces) == 0:
+            return False, 0.0
+
+        image_area = float(gray_image.shape[0] * gray_image.shape[1])
+        largest_face_area = max((w * h for (_, _, w, h) in faces), default=0)
+        face_area_ratio = (largest_face_area / image_area) if image_area > 0 else 0.0
+        return face_area_ratio >= 0.03, face_area_ratio
+    except Exception:
+        return False, 0.0
+
+
+def validate_cattle_image(image_path, confidence_threshold=0.65):
     """
     Validasi apakah gambar adalah sapi atau bukan.
     Bisa deteksi wajah sapi (dengan mata) atau bagian tubuh sapi lainnya.
@@ -25,6 +50,12 @@ def validate_cattle_image(image_path, confidence_threshold=0.75):
         
         h, w = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Tolak foto wajah manusia lebih awal karena sering lolos pada heuristik warna/tekstur.
+        human_face_detected, face_area_ratio = _detect_human_face(gray)
+        if human_face_detected:
+            print(f"[VALIDATE] Wajah manusia terdeteksi | area={face_area_ratio*100:.1f}%")
+            return False, 0.0, "Gambar tidak menunjukkan sapi"
         
         # ===== LAYER 1: DETEKSI MATA (OPTIONAL - hanya bonus jika ada) =====
         circles = cv2.HoughCircles(
@@ -76,66 +107,66 @@ def validate_cattle_image(image_path, confidence_threshold=0.75):
         cattle_color = brown_mask | red_mask | black_mask | white_mask
         color_ratio = np.sum(cattle_color) / (h * w)
         
-        # Minimum warna sapi harus 30% (ketat untuk menolak bukan sapi)
-        if color_ratio < 0.30:
+        # Minimum warna sapi dibuat lebih longgar supaya foto sapi yang crop/lighting-nya beragam tetap lolos
+        if color_ratio < 0.18:
             return False, 0.0, "Gambar tidak menunjukkan sapi"
         
         # Score color: ketat untuk matching sapi
-        if color_ratio >= 0.50:
+        if color_ratio >= 0.45:
             color_score = 1.0
-        elif color_ratio >= 0.40:
-            color_score = 0.95
         elif color_ratio >= 0.30:
-            color_score = 0.80
+            color_score = 0.90
+        elif color_ratio >= 0.18:
+            color_score = 0.75
         else:
-            color_score = 0.60
+            color_score = 0.55
         print(f"[VALIDATE] Warna sapi: {color_ratio*100:.0f}%")
         
         # ===== LAYER 3: VALIDASI TEKSTUR KULIT =====
         laplacian = cv2.Laplacian(gray, cv2.CV_64F)
         texture_variance = np.var(laplacian)
         
-        # Texture sapi harus dalam range spesifik 80-2200 (ketat)
-        if texture_variance < 80 or texture_variance > 2200:
+        # Range texture dibuat lebih fleksibel karena foto asli bisa sangat bervariasi
+        if texture_variance < 45 or texture_variance > 3500:
             return False, 0.0, "Gambar tidak menunjukkan tekstur sapi"
         
         # Score texture: ketat untuk matching sapi texture
-        if 120 <= texture_variance <= 1800:
+        if 100 <= texture_variance <= 2200:
             texture_score = 1.0
-        elif 90 <= texture_variance <= 2100:
-            texture_score = 0.90
+        elif 70 <= texture_variance <= 3000:
+            texture_score = 0.85
         else:
-            texture_score = 0.75
+            texture_score = 0.70
         print(f"[VALIDATE] Tekstur variance: {texture_variance:.0f}")
         
         # ===== LAYER 4: EDGE DETECTION (Struktur) =====
         edges = cv2.Canny(gray, 50, 150)
         edge_density = np.sum(edges > 0) / (h * w)
         
-        # Edge density: 2-25% ketat untuk sapi
-        if edge_density < 0.02 or edge_density > 0.25:
+        # Edge density dibuat lebih longgar supaya gambar close-up atau background polos tidak langsung gagal
+        if edge_density < 0.01 or edge_density > 0.35:
             return False, 0.0, "Gambar tidak memiliki struktur sapi"
         
         # Score edge: ketat untuk matching
-        if 0.05 <= edge_density <= 0.15:
+        if 0.04 <= edge_density <= 0.18:
             edge_score = 1.0
-        elif 0.03 <= edge_density <= 0.22:
-            edge_score = 0.90
+        elif 0.02 <= edge_density <= 0.28:
+            edge_score = 0.85
         else:
-            edge_score = 0.70
+            edge_score = 0.65
         print(f"[VALIDATE] Edge density: {edge_density*100:.1f}%")
         
         # ===== HARD REQUIREMENTS =====
         # REQUIREMENT 1: Warna harus minimal decent (tidak boleh terlalu rendah)
-        if color_score < 0.75:
+        if color_score < 0.55:
             return False, 0.0, "Warna gambar tidak sesuai sapi"
         
         # REQUIREMENT 2: Texture harus dalam range sapi
-        if texture_score < 0.70:
+        if texture_score < 0.60:
             return False, 0.0, "Tekstur gambar tidak sesuai sapi"
         
         # REQUIREMENT 3: Edge harus terdeteksi
-        if edge_score < 0.65:
+        if edge_score < 0.55:
             return False, 0.0, "Struktur gambar tidak terlihat jelas"
         
         # ===== FINAL CALCULATION =====
