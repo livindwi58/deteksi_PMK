@@ -16,13 +16,15 @@
             </p>
         </div>
         <!-- Status Model -->
-        <div id="model-status-banner" class="alert text-center {% if model_loaded %}alert-success{% else %}alert-warning{% endif %}">
-            {% if model_loaded %}
+        {% if model_loaded %}
+        <div class="alert alert-success text-center">
             <i class="fas fa-check-circle"></i> Model siap digunakan
-            {% else %}
-            <i class="fas fa-exclamation-triangle"></i> Model sedang dimuat, silakan tunggu...
-            {% endif %}
         </div>
+        {% else %}
+        <div class="alert alert-warning text-center">
+            <i class="fas fa-exclamation-triangle"></i> Model sedang dimuat, silakan tunggu...
+        </div>
+        {% endif %}
 
         <!-- Main Features -->
         <div class="row g-4 mb-5 justify-content-center">
@@ -98,38 +100,4 @@
     border-radius: 50%;
 }
 </style>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const banner = document.getElementById('model-status-banner');
-    if (!banner) return;
-
-    async function refreshModelStatus() {
-        try {
-            const response = await fetch('{{ url_for("api_model_status") }}', { cache: 'no-store' });
-            if (!response.ok) return;
-
-            const data = await response.json();
-            if (data.ready) {
-                banner.className = 'alert alert-success text-center';
-                banner.innerHTML = '<i class="fas fa-check-circle"></i> Model siap digunakan';
-                return;
-            }
-
-            if (data.status === 'error' && data.error) {
-                banner.className = 'alert alert-danger text-center';
-                banner.innerHTML = '<i class="fas fa-times-circle"></i> Model gagal dimuat: ' + data.error;
-                return;
-            }
-
-            banner.className = 'alert alert-warning text-center';
-            banner.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Model sedang dimuat, silakan tunggu...';
-        } catch (error) {
-            console.error('Failed to fetch model status:', error);
-        }
-    }
-
-    refreshModelStatus();
-    setInterval(refreshModelStatus, 5000);
-});
-</script>
 {% endblock %}

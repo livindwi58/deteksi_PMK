@@ -86,10 +86,9 @@ label_encoder = None
 extractor = FeatureExtractor()
 model_loading = False  
 model_loaded = False   
-model_load_error = None
 
 def _load_model_background():
-    global model, scaler, label_encoder, model_loading, model_loaded, model_load_error
+    global model, scaler, label_encoder, model_loading, model_loaded
     
     # Prevent double-loading
     if model_loading or model_loaded:
@@ -102,14 +101,12 @@ def _load_model_background():
         m, s, le = load_model()
         model, scaler, label_encoder = m, s, le
         model_loaded = True
-        model_load_error = None
         print('[APP] Model loaded successfully.')
     except Exception as e:
         model = None
         scaler = None
         label_encoder = None
-        model_loaded = False
-        model_load_error = str(e)
+        model_loaded = True  # Mark as done to prevent retry loop
         print(f"[APP] ❌ Background model load failed: {e}")
     finally:
         model_loading = False
@@ -121,27 +118,6 @@ threading.Thread(target=_load_model_background, daemon=True).start()
 def is_model_ready():
     """Check if model is loaded and ready to use"""
     return model is not None and scaler is not None and label_encoder is not None
-
-
-@app.route('/api/model-status')
-def api_model_status():
-    """Return the current model loading status for the homepage."""
-    ready = is_model_ready()
-    if ready:
-        status = 'ready'
-    elif model_loading:
-        status = 'loading'
-    elif model_load_error:
-        status = 'error'
-    else:
-        status = 'loading'
-
-    return jsonify({
-        'status': status,
-        'ready': ready,
-        'loading': model_loading,
-        'error': model_load_error,
-    })
 
 
 def allowed_file(filename):
