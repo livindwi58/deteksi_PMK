@@ -407,9 +407,23 @@ def predict():
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
-        # File sudah di-validasi di frontend (/api/validate-image)
-        # Jangan validasi lagi, langsung lanjut ke diagnosis
-        print(f"[PREDICT] ✅ File diterima dari frontend validation: {filename}")
+        # Validasi ulang di backend supaya request langsung ke /predict tidak bisa bypass.
+        is_cattle, validation_confidence, validation_reason = validate_cattle_image(
+            filepath,
+            confidence_threshold=0.75,
+        )
+        if not is_cattle:
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    print(f"[PREDICT] ✓ File DIHAPUS (bukan sapi): {filename}")
+                except Exception as del_err:
+                    print(f"[PREDICT] ⚠️ Error menghapus file non-sapi: {del_err}")
+
+            flash(validation_reason or 'Gambar selain sapi tidak diizinkan', 'error')
+            return redirect(url_for('index'))
+
+        print(f"[PREDICT] ✅ File lolos validasi backend: {filename} ({validation_confidence*100:.0f}%)")
 
         if not is_model_ready():
             # Model belum siap - HAPUS FILE
