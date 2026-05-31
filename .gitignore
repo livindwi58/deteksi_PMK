@@ -1,6 +1,10 @@
 __pycache__
 .vscode
 models/*
+!models/knn_model.pkl
+!models/scaler.pkl
+!models/label_encoder.pkl
+!models/pca.pkl
 results/*
 dataset/*
 uploads/*
