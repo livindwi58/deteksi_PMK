@@ -20,6 +20,15 @@ TZ_INDONESIA = pytz.timezone('Asia/Jakarta')
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 
+def _env(*names):
+    """Return the first non-empty environment variable from a list of names."""
+    for name in names:
+        value = os.environ.get(name)
+        if value not in (None, ''):
+            return value
+    return None
+
+
 def _build_database_uri():
     """Build a SQLAlchemy database URI from Railway or local environment variables.
 
@@ -28,11 +37,13 @@ def _build_database_uri():
        MYSQLPASSWORD, MYSQLDATABASE) — most reliable when set via Railway reference vars.
     2. DATABASE_URL — used as a fallback if the individual variables are absent.
     """
-    mysql_host = os.environ.get('MYSQLHOST')
-    mysql_port = os.environ.get('MYSQLPORT')
-    mysql_user = os.environ.get('MYSQLUSER')
-    mysql_password = os.environ.get('MYSQLPASSWORD')  # may be empty string — that is valid
-    mysql_database = os.environ.get('MYSQLDATABASE')
+    mysql_host = _env('MYSQLHOST', 'MYSQL_HOST')
+    mysql_port = _env('MYSQLPORT', 'MYSQL_PORT')
+    mysql_user = _env('MYSQLUSER', 'MYSQL_USER')
+    mysql_password = os.environ.get('MYSQLPASSWORD')
+    if mysql_password is None:
+        mysql_password = os.environ.get('MYSQL_PASSWORD')
+    mysql_database = _env('MYSQLDATABASE', 'MYSQL_DATABASE')
 
     if mysql_host and mysql_user and mysql_database:
         db_port = mysql_port or '3306'
