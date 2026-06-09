@@ -6,5 +6,4 @@ models/*
 !models/label_encoder.pkl
 !models/pca.pkl
 results/*
-dataset/*
 uploads/*
