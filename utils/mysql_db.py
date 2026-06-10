@@ -105,6 +105,7 @@ class Prediction(Base):
     prediction = Column(String(50))  # 'sehat' or 'sakit'
     confidence = Column(Float)
     features = Column(Text)  # JSON string of features
+    images_data = Column(Text, nullable=True)  # JSON array of per-image data for multi-file upload
     timestamp = Column(DateTime, default=lambda: datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None))
 
 
@@ -235,19 +236,6 @@ DEFAULT_EXPERT_DISEASES = [
         'display_order': 3,
     },
     {
-        'code': 'P04',
-        'name': 'PMK_JUVENIL',
-        'description': 'PMK pada hewan muda yang biasanya terlihat dengan gejala berat seperti lemas, mudah berbaring, gangguan jantung, atau kematian mendadak.',
-        'solutions': [
-            'Pisahkan hewan muda yang terlihat lemah',
-            'Pantau suhu tubuh dan detak jantung',
-            'Segera hubungi dokter hewan karena kondisi bisa cepat memburuk',
-            'Berikan pakan dan minum yang cukup bila masih mau makan',
-            'Jangan biarkan hewan muda bercampur dengan ternak lain',
-        ],
-        'display_order': 4,
-    },
-    {
         'code': 'P05',
         'name': 'PMK_AKUT_GENERAL',
         'description': 'PMK yang muncul sangat cepat dan berat, biasanya dengan demam tinggi, lesu, nafsu makan turun, dan tanda gangguan tubuh yang umum.',
@@ -258,7 +246,7 @@ DEFAULT_EXPERT_DISEASES = [
             'Berikan pakan yang mudah dimakan bila masih mau makan',
             'Jaga kebersihan kandang dan alat agar penularan tidak meluas',
         ],
-        'display_order': 5,
+        'display_order': 4,
     },
 ]
 
@@ -286,17 +274,10 @@ DEFAULT_EXPERT_RULES = [
     },
     {
         'code': 'FC04',
-        'symptom_codes': ['G01', 'G13', 'G28', 'G29'],
-        'result_disease_code': 'P04',
-        'description': 'PMK juvenil: demam, miokarditis/kematian mendadak, takikardia atau irama jantung tidak normal, serta sesak napas atau gagal jantung',
-        'display_order': 4,
-    },
-    {
-        'code': 'FC05',
         'symptom_codes': ['G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07', 'G09', 'G11', 'G12', 'G14', 'G18', 'G20', 'G22', 'G23', 'G24', 'G26'],
         'result_disease_code': 'P05',
         'description': 'PMK akut: demam, air liur berlebihan, luka mulut, nyeri setelah lepuh pecah, lepuh kaki/kuku, lepuh puting, produksi susu menurun, nafsu makan turun, lesu, lepuh moncong, luka meluas, edema/radang, bengkak celah kuku, telapak kaki longgar, dan puting retak',
-        'display_order': 5,
+        'display_order': 4,
     },
 ]
 
@@ -320,6 +301,7 @@ def init_mysql_tables():
         Base.metadata.create_all(engine)
         migrate_diagnosis_history_schema()
         migrate_expert_rule_disease_fk()
+        migrate_add_images_data_column()
         seed_expert_knowledge(force=False)
         sync_expert_rule_symptom_relations()
         print("Database tables initialized successfully")
@@ -369,6 +351,24 @@ def migrate_expert_rule_disease_fk():
         print("✓ Added foreign key expert_rules.result_disease_code -> expert_diseases.code")
     except SQLAlchemyError as e:
         print(f"Warning: unable to add expert_rules disease foreign key: {e}")
+
+
+def migrate_add_images_data_column():
+    """Add images_data column to predictions table if it doesn't exist."""
+    try:
+        inspector = inspect(engine)
+        if 'predictions' not in inspector.get_table_names():
+            return
+        column_names = {column['name'] for column in inspector.get_columns('predictions')}
+        if 'images_data' in column_names:
+            return
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE predictions ADD COLUMN images_data TEXT NULL AFTER features"
+            ))
+        print("✓ Added images_data column to predictions table")
+    except SQLAlchemyError as e:
+        print(f"Warning: unable to add images_data column: {e}")
 
 
 def sync_expert_rule_symptom_relations():
@@ -451,6 +451,12 @@ def seed_expert_knowledge(force=False):
             row.description = item.get('description', '')
             row.is_active = True
             row.display_order = item.get('display_order', 0)
+
+        if force:
+            current_disease_codes = {d['code'] for d in DEFAULT_EXPERT_DISEASES}
+            current_rule_codes = {r['code'] for r in DEFAULT_EXPERT_RULES}
+            session.query(ExpertRule).filter(~ExpertRule.code.in_(current_rule_codes)).delete(synchronize_session='fetch')
+            session.query(ExpertDisease).filter(~ExpertDisease.code.in_(current_disease_codes)).delete(synchronize_session='fetch')
 
         session.commit()
         sync_expert_rule_symptom_relations()
@@ -589,6 +595,56 @@ def save_prediction_mysql(original_filename, filename, image_path, prediction, c
         raise
 
 
+def save_batch_prediction_mysql(images_data_list, timestamp=None):
+    """
+    Save a batch of prediction results as a single row.
+    
+    Args:
+        images_data_list: List of dicts, each with:
+            - original_filename, filename, image_path
+            - prediction, pmk_type (or None), confidence
+        timestamp: Optional datetime
+    
+    Returns:
+        ID of saved prediction row
+    """
+    try:
+        session = Session()
+        has_sick = any(img['prediction'].lower() == 'sakit' for img in images_data_list)
+        overall_prediction = 'sakit' if has_sick else 'sehat'
+        max_conf = max(img['confidence'] for img in images_data_list)
+        first = images_data_list[0]
+
+        features_dict = {
+            'batch_upload': True,
+            'image_count': len(images_data_list),
+            'sick_count': sum(1 for img in images_data_list if img['prediction'].lower() == 'sakit'),
+            'healthy_count': sum(1 for img in images_data_list if img['prediction'].lower() == 'sehat'),
+        }
+
+        images_json = json.dumps(images_data_list, default=str)
+
+        pred = Prediction(
+            original_filename=first['original_filename'],
+            filename=first['filename'],
+            image_path=first['image_path'],
+            prediction=overall_prediction,
+            confidence=float(max_conf),
+            features=json.dumps(features_dict, default=str),
+            images_data=images_json,
+            timestamp=timestamp or datetime.datetime.now(TZ_INDONESIA).replace(tzinfo=None)
+        )
+
+        session.add(pred)
+        session.commit()
+        pred_id = pred.id
+        session.close()
+        return pred_id
+    except SQLAlchemyError as e:
+        print(f"Error saving batch prediction to database: {e}")
+        raise
+
+
 def get_recent_predictions_mysql(limit=10):
     """
     Get recent predictions from database
@@ -613,6 +669,10 @@ def get_recent_predictions_mysql(limit=10):
                 features = json.loads(pred.features) if pred.features else {}
             except:
                 features = {}
+            try:
+                images_data = json.loads(pred.images_data) if pred.images_data else None
+            except:
+                images_data = None
 
             source = _prediction_source_from_features(features)
             diagnosis = get_diagnosis_by_prediction_id(pred.id)
@@ -620,6 +680,8 @@ def get_recent_predictions_mysql(limit=10):
             diagnosis_label = None
             if diagnosis and isinstance(diagnosis, dict):
                 diagnosis_label = diagnosis.get('diagnosis', {}).get('nama') or diagnosis.get('diagnosis', {}).get('name')
+            
+            image_count = len(images_data) if images_data else 1
             
             result.append({
                 'id': pred.id,
@@ -632,6 +694,8 @@ def get_recent_predictions_mysql(limit=10):
                 'source': source,
                 'diagnosis': diagnosis,
                 'diagnosis_label': diagnosis_label,
+                'images_data': images_data,
+                'image_count': image_count,
                 'timestamp': pred.timestamp.isoformat() if pred.timestamp else None
             })
         
@@ -665,12 +729,18 @@ def get_prediction_by_id(pred_id):
             features = json.loads(pred.features) if pred.features else {}
         except:
             features = {}
+        try:
+            images_data = json.loads(pred.images_data) if pred.images_data else None
+        except:
+            images_data = None
 
         source = _prediction_source_from_features(features)
         diagnosis = get_diagnosis_by_prediction_id(pred.id)
         diagnosis_label = None
         if diagnosis and isinstance(diagnosis, dict):
             diagnosis_label = diagnosis.get('diagnosis', {}).get('nama') or diagnosis.get('diagnosis', {}).get('name')
+        
+        image_count = len(images_data) if images_data else 1
         
         result = {
             'id': pred.id,
@@ -683,6 +753,8 @@ def get_prediction_by_id(pred_id):
             'source': source,
             'diagnosis': diagnosis,
             'diagnosis_label': diagnosis_label,
+            'images_data': images_data,
+            'image_count': image_count,
             'timestamp': pred.timestamp.isoformat() if pred.timestamp else None
         }
         

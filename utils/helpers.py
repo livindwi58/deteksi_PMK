@@ -37,6 +37,11 @@ def _save_preprocessed_training_images(img_path, class_name, original_filename, 
 def prepare_dataset(data_dir='dataset'):
     """
     Prepare dataset from directory structure using enhanced preprocessing pipeline
+    
+    Auto-detects class directories:
+      - 'healthy' → label 'sehat'
+      - Any directory starting with 'pmk_' → label = directory name
+      - 'sick'    → label 'sakit' (backward compat)
     """
     features = []
     labels = []
@@ -44,11 +49,22 @@ def prepare_dataset(data_dir='dataset'):
     
     extractor = FeatureExtractor()
     
-    # Define class directories
-    class_dirs = {
-        'healthy': 'sehat',
-        'sick': 'sakit'
-    }
+    # Auto-detect class directories
+    class_dirs = {}
+    if not os.path.exists(data_dir):
+        raise ValueError(f"Directory {data_dir} tidak ditemukan!")
+    for entry in sorted(os.listdir(data_dir)):
+        entry_path = os.path.join(data_dir, entry)
+        if os.path.isdir(entry_path):
+            if entry == 'healthy':
+                class_dirs[entry] = 'sehat'
+            elif entry.startswith('pmk_'):
+                class_dirs[entry] = entry
+            elif entry == 'sick':
+                class_dirs[entry] = 'sakit'
+
+    if not class_dirs:
+        raise ValueError(f"Tidak ada folder kelas yang ditemukan di {data_dir}!")
 
     resize_dir = os.path.join('uploads', 'resize')
     threshold_dir = os.path.join('uploads', 'threshold')
@@ -63,10 +79,10 @@ def prepare_dataset(data_dir='dataset'):
                 if img_file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
                     img_path = os.path.join(class_dir, img_file)
                     try:
-                        _, img_resized, _ = preprocess_image(img_path, target_size=(128, 128))
+                        _, img_resized, _ = preprocess_image(img_path, target_size=(256, 256))
                         # Use threshold-based preprocessing pipeline
                         # Returns: img_rgb (for RGB features), gray_processed (for GLCM)
-                        img_rgb, gray_eq = preprocess_pipeline(img_path, target_size=(128, 128))
+                        img_rgb, gray_eq = preprocess_pipeline(img_path, target_size=(256, 256))
 
                         _save_preprocessed_training_images(
                             img_path=img_path,
@@ -95,21 +111,21 @@ def prepare_dataset(data_dir='dataset'):
     
     return np.array(features), np.array(labels), image_paths
 
-def save_model(model, scaler, label_encoder):
+def save_model(model, scaler, label_encoder, prefix=''):
     """Save trained model and preprocessing objects"""
     os.makedirs('models', exist_ok=True)
     
-    joblib.dump(model, 'models/knn_model.pkl')
-    joblib.dump(scaler, 'models/scaler.pkl')
-    joblib.dump(label_encoder, 'models/label_encoder.pkl')
+    joblib.dump(model, f'models/{prefix}knn_model.pkl')
+    joblib.dump(scaler, f'models/{prefix}scaler.pkl')
+    joblib.dump(label_encoder, f'models/{prefix}label_encoder.pkl')
     
-    print("Model disimpan di folder 'models/'")
+    print(f"Model disimpan di folder 'models/' (prefix='{prefix}')")
 
-def load_model():
+def load_model(prefix=''):
     """Load trained model and preprocessing objects"""
-    model = joblib.load('models/knn_model.pkl')
-    scaler = joblib.load('models/scaler.pkl')
-    label_encoder = joblib.load('models/label_encoder.pkl')
+    model = joblib.load(f'models/{prefix}knn_model.pkl')
+    scaler = joblib.load(f'models/{prefix}scaler.pkl')
+    label_encoder = joblib.load(f'models/{prefix}label_encoder.pkl')
     
     return model, scaler, label_encoder
 
@@ -140,7 +156,7 @@ def estimate_prediction_confidence(model, features_scaled):
             support = (top_weight + 1.0) / (total_weight + n_classes)
             margin = (top_weight - second_weight) / total_weight if total_weight > 0 else 0.0
             confidence = (0.85 * support + 0.15 * margin) * 100.0
-            return float(np.clip(confidence, 50.0, 98.5))
+            return float(np.clip(confidence, 50.0, 89.5))
 
         probabilities = model.predict_proba(features_array)[0]
         probabilities = np.asarray(probabilities, dtype=float)
@@ -151,7 +167,7 @@ def estimate_prediction_confidence(model, features_scaled):
             second = 0.0
 
         confidence = (0.9 * top + 0.1 * max(top - second, 0.0)) * 100.0
-        return float(np.clip(confidence, 50.0, 98.5))
+        return float(np.clip(confidence, 50.0, 89.5))
     except Exception:
         return None
 
@@ -203,27 +219,26 @@ def analyze_features():
     label_column = 'label_name' if 'label_name' in df.columns else 'label'
 
     # Create feature comparison plot
-    fig, axes = plt.subplots(3, 5, figsize=(20, 12))
+    n_features = min(len(feature_columns), 30)
+    n_cols = 5
+    n_rows = int(np.ceil(n_features / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 4 * n_rows))
     axes = axes.ravel()
 
-    for idx, feature in enumerate(feature_columns[:15]):
-        if label_column == 'label_name':
-            healthy_vals = df[df[label_column] == 'normal'][feature]
-            sick_vals = df[df[label_column] == 'defective'][feature]
-            healthy_label = 'Normal'
-            sick_label = 'Defective'
-        else:
-            healthy_vals = df[df[label_column] == 'sehat'][feature]
-            sick_vals = df[df[label_column] == 'sakit'][feature]
-            healthy_label = 'Sehat'
-            sick_label = 'Sakit'
+    for idx in range(n_features):
+        feature = feature_columns[idx]
+        unique_labels = sorted(df[label_column].unique())
+        cmap = plt.cm.Set1
+        colors = [cmap(i % 9) for i in range(len(unique_labels))]
 
-        axes[idx].hist(healthy_vals, alpha=0.5, label=healthy_label, bins=20, color='green')
-        axes[idx].hist(sick_vals, alpha=0.5, label=sick_label, bins=20, color='red')
+        for i, label_val in enumerate(unique_labels):
+            vals = df[df[label_column] == label_val][feature]
+            axes[idx].hist(vals, alpha=0.6, label=label_val, bins=20,
+                           color=colors[i])
         axes[idx].set_title(feature)
         axes[idx].legend()
 
-    for idx in range(len(feature_columns), len(axes)):
+    for idx in range(n_features, len(axes)):
         axes[idx].axis('off')
 
     plt.tight_layout()

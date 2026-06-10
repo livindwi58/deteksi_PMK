@@ -33,7 +33,36 @@
                     </div>
 
                     <!-- Image Display -->
-                    {% if prediction.image_path and not is_manual_expert_system %}
+                    {% if prediction.images_data and prediction.images_data|length > 0 %}
+                    <div class="card mb-4 border-success">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0"><i class="fas fa-camera me-2"></i>Hasil Deteksi Gambar ({{ prediction.images_data|length }} gambar)</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                {% for img in prediction.images_data %}
+                                <div class="col-md-4 col-6 mb-3">
+                                    <div class="card h-100">
+                                        <img src="{{ url_for('uploaded_file', filename=img.filename) }}"
+                                             class="card-img-top" style="height:120px;object-fit:cover"
+                                             alt="{{ img.original_filename }}">
+                                        <div class="card-body p-2 text-center">
+                                            <small class="d-block text-truncate">{{ img.original_filename }}</small>
+                                            <span class="badge {% if img.prediction == 'sakit' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                                {{ img.prediction|upper }}
+                                            </span>
+                                            {% if img.pmk_type %}
+                                            <span class="badge bg-info">{{ img.pmk_type }}</span>
+                                            {% endif %}
+                                            <small class="d-block text-muted">{{ img.confidence|round(1) }}%</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% elif prediction.image_path and not is_manual_expert_system %}
                     <div class="card mb-4">
                         <div class="card-header">
                             <h5 class="mb-0"><i class="fas fa-image"></i> Foto yang Dianalisis</h5>

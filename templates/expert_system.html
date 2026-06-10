@@ -37,7 +37,36 @@
                 </div>
                 {% endif %}
                 
-                {% if image_info %}
+                {% if upload_images and upload_images|length > 0 %}
+                <div class="card mb-4 border-success">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-camera me-2"></i>Hasil Deteksi Gambar ({{ upload_images|length }} gambar)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for img in upload_images %}
+                            <div class="col-md-4 col-6 mb-3">
+                                <div class="card h-100">
+                                    <img src="{{ url_for('uploaded_file', filename=img.filename) }}"
+                                         class="card-img-top" style="height:120px;object-fit:cover"
+                                         alt="{{ img.original_filename }}">
+                                    <div class="card-body p-2 text-center">
+                                        <small class="d-block text-truncate">{{ img.original_filename }}</small>
+                                        <span class="badge {% if img.prediction == 'sakit' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                            {{ img.prediction|upper }}
+                                        </span>
+                                        {% if img.pmk_type %}
+                                        <span class="badge bg-info">{{ img.pmk_type }}</span>
+                                        {% endif %}
+                                        <small class="d-block text-muted">{{ img.confidence|round(1) }}%</small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% elif image_info %}
                 <div class="alert alert-success mb-4">
                     <h5 class="alert-heading"><i class="fas fa-camera me-2"></i>Informasi Deteksi Sebelumnya</h5>
                     <div class="row">
@@ -49,10 +78,6 @@
                                 </span>
                             </p>
                         </div>
-                        <!-- <div class="col-md-4 text-center">
-                            <i class="fas fa-arrow-right fa-2x text-success"></i>
-                            <p class="mb-0"><small>Lanjutkan diagnosis</small></p>
-                        </div> -->
                     </div>
                 </div>
                 {% endif %}
@@ -92,8 +117,6 @@
                                                     <span class="badge bg-warning text-dark fs-6">PMK PODAL</span>
                                                 {% elif diag.severity == 'laktasi' %}
                                                     <span class="badge bg-primary fs-6">PMK LAKTASI</span>
-                                                {% elif diag.severity == 'juvenil' %}
-                                                    <span class="badge bg-danger fs-6">PMK JUVENIL</span>
                                                 {% elif diag.severity == 'akut umum' %}
                                                     <span class="badge bg-dark fs-6">PMK AKUT UMUM</span>
                                                 {% else %}
@@ -183,39 +206,34 @@
                         <div class="mb-4">
                             <h5 class="mb-3"><i class="fas fa-list-ul me-2"></i>Pilih Gejala yang Diamati:</h5>
                             
-                            <!-- Kategori Gejala -->
-                            <div class="accordion" id="gejalaAccordion">
-                                {% for group_key, group in gejala_groups.items() %}
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header" id="heading{{ group_key|capitalize }}">
-                                        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ group_key|capitalize }}">
-                                            {% if group_key == 'umum' %}<i class="fas fa-thermometer-half me-2"></i>{% elif group_key == 'mulut' %}<i class="fas fa-tooth me-2"></i>{% elif group_key == 'kaki' %}<i class="fas fa-shoe-prints me-2"></i>{% elif group_key == 'ambing' %}<i class="fas fa-cow me-2"></i>{% else %}<i class="fas fa-exclamation-triangle me-2"></i>{% endif %}
-                                            {{ group.title }}
-                                        </button>
-                                    </h2>
-                                    <div id="collapse{{ group_key|capitalize }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#gejalaAccordion">
-                                        <div class="accordion-body">
-                                            <div class="row">
-                                                {% for kode in group.codes %}
-                                                <div class="col-md-6 mb-2">
-                                                    <div class="form-check">
-                                                        <input class="form-check-input" type="checkbox"
-                                                               name="gejala" value="{{ kode }}"
-                                                               id="gejala{{ kode }}"
-                                                               {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
-                                                        <label class="form-check-label" for="gejala{{ kode }}">
-                                                            <strong>{{ kode }}:</strong> {{ gejala_list[kode] }}
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                                {% endfor %}
+                            <!-- Kategori Gejala (semua terbuka) -->
+                            {% for group_key, group in gejala_groups.items() %}
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h5 class="mb-0">
+                                        {% if group_key == 'umum' %}<i class="fas fa-thermometer-half me-2"></i>{% elif group_key == 'mulut' %}<i class="fas fa-tooth me-2"></i>{% elif group_key == 'kaki' %}<i class="fas fa-shoe-prints me-2"></i>{% elif group_key == 'ambing' %}<i class="fas fa-cow me-2"></i>{% else %}<i class="fas fa-exclamation-triangle me-2"></i>{% endif %}
+                                        {{ group.title }}
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        {% for kode in group.codes %}
+                                        <div class="col-md-6 mb-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox"
+                                                       name="gejala" value="{{ kode }}"
+                                                       id="gejala{{ kode }}"
+                                                       {% if selected_gejala and kode in selected_gejala %}checked{% endif %}>
+                                                <label class="form-check-label" for="gejala{{ kode }}">
+                                                    <strong>{{ kode }}:</strong> {{ gejala_list[kode] }}
+                                                </label>
                                             </div>
                                         </div>
+                                        {% endfor %}
                                     </div>
                                 </div>
-                                {% endfor %}
-                                
                             </div>
+                            {% endfor %}
                         </div>
                         
                         <!-- Action Buttons -->
@@ -259,23 +277,9 @@
 </div>
 
 <style>
-.accordion-button:not(.collapsed) {
-    background-color: #d4edda;
-    color: #155724;
-}
-
 .form-check-input:checked {
     background-color: #28a745;
     border-color: #28a745;
-}
-
-@media print {
-    .btn, footer, nav, .accordion-button {
-        display: none !important;
-    }
-    .accordion-collapse {
-        display: block !important;
-    }
 }
 </style>
 {% endblock %}
@@ -285,23 +289,19 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Simpan predictions.id ke localStorage agar riwayat deteksi hanya menampilkan data terkait
     (function() {
-        const savedPredictionId = Number('{{ diagnosis.saved_prediction_id if diagnosis and diagnosis.saved_prediction_id else 0 }}');
-        const storageKey = 'pmk_predictions_ids';
-        let storedIds = [];
+        var predId = Number('{{ diagnosis.saved_prediction_id if diagnosis and diagnosis.saved_prediction_id else (image_info.db_id if image_info and image_info.db_id else 0) }}');
+        if (predId <= 0) return;
 
-        if (savedPredictionId <= 0) {
-            return;
-        }
-
+        var storageKey = 'pmk_predictions_ids';
+        var storedIds = [];
         try {
             storedIds = JSON.parse(localStorage.getItem(storageKey) || '[]');
             if (!Array.isArray(storedIds)) storedIds = [];
         } catch (e) {
             storedIds = [];
         }
-
-        if (!storedIds.includes(savedPredictionId)) {
-            storedIds.unshift(savedPredictionId);
+        if (storedIds.indexOf(predId) === -1) {
+            storedIds.unshift(predId);
             localStorage.setItem(storageKey, JSON.stringify(storedIds));
         }
     })();

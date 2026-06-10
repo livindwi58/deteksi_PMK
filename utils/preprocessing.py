@@ -192,7 +192,7 @@ def validate_cattle_image(image_path, confidence_threshold=0.65):
 
 def preprocess_image(
     image_path,
-    target_size=(128, 128),
+    target_size=(256, 256),
     apply_threshold=False,
     thresh_method='otsu',
     thresh_val=127,
@@ -282,7 +282,7 @@ def preprocess_image(
 
 def preprocess_pipeline(
         image_path,
-    target_size=(128, 128),
+    target_size=(256, 256),
         apply_threshold=True,
         thresh_method='otsu',
         thresh_val=127,

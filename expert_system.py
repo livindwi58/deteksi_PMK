@@ -5,7 +5,6 @@ DISEASE_ALIAS_MAP = {
     'P01': {'ORAL', 'ORAL_KUAT', 'P01'},
     'P02': {'PODAL', 'PODAL_KUAT', 'P02'},
     'P03': {'LAKTASI', 'LAKTASI_KUAT', 'P03'},
-    'P04': {'JUVENIL', 'JUVENIL_KUAT', 'P04'},
     'P05': {'AKUT_GENERAL', 'AKUT_GENERAL_KUAT', 'P05'},
 }
 
@@ -211,7 +210,6 @@ class ForwardChaining:
             'P01': 'oral',
             'P02': 'podal',
             'P03': 'laktasi',
-            'P04': 'juvenil',
             'P05': 'akut umum'
         }
         

@@ -7,3 +7,5 @@ models/*
 !models/pca.pkl
 results/*
 uploads/*
+.venv
+.python-version

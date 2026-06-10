@@ -7,18 +7,16 @@
     <div class="col-md-8">
         <div class="card shadow">
             <div class="card-header bg-success text-white">
-                <h4 class="mb-0">Upload Gambar</h4>
+                <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload Gambar Sapi</h4>
             </div>
             <div class="card-body">
-                
-                <!-- Info Panel -->
+
                 <div class="alert alert-info mb-4">
                     <i class="fas fa-info-circle me-2"></i>
-                    <strong>Petunjuk:</strong> Upload gambar sapi dengan format JPG, JPEG, PNG, atau BMP. 
-                    Pastikan gambar jelas dan bagian tubuh sapi terlihat dengan baik.
+                    <strong>Petunjuk:</strong> Upload satu atau lebih gambar sapi dengan format JPG, JPEG, PNG, atau BMP.
+                    Jika terdeteksi sakit, anda akan diarahkan ke Sistem Pakar untuk diagnosis lebih lanjut.
                 </div>
 
-                <!-- Error Message -->
                 {% if error %}
                 <div class="alert alert-danger">
                     <i class="fas fa-exclamation-circle me-2"></i>
@@ -26,22 +24,18 @@
                 </div>
                 {% endif %}
 
-                <!-- Upload Form -->
                 <form method="POST" action="{{ url_for('predict') }}" enctype="multipart/form-data" id="uploadForm">
                     <div class="mb-4">
-                        <label for="file" class="form-label fw-bold">Pilih Gambar</label>
-                        
-                        <!-- Custom File Upload -->
-                        <div class="upload-area border border-2 border-dashed rounded p-4 text-center" 
+                        <div class="upload-area border border-2 border-dashed rounded p-4 text-center"
                              id="uploadArea">
                             <i class="fas fa-cloud-upload-alt fa-4x text-success mb-3"></i>
-                            <h5>Drag & Drop, Pilih dari Galeri, atau Ambil dari Kamera</h5>
-                            <p class="text-muted mb-3">Format: JPG, JPEG, PNG, BMP (Maks. 16MB)</p>
-                            <input type="file" class="form-control d-none" id="file" name="image" 
-                                   accept="image/*" required>
+                            <h5>Drag & Drop, atau Pilih dari Galeri</h5>
+                            <p class="text-muted mb-3">Format: JPG, JPEG, PNG, BMP (Maks. 16MB per file)</p>
+                            <input type="file" class="d-none" id="file" name="image"
+                                   accept="image/*" multiple>
                             <div class="d-flex flex-wrap justify-content-center gap-2">
                                 <button type="button" class="btn btn-success" id="browseBtn">
-                                    <i class="fas fa-images me-2"></i>Galeri
+                                    <i class="fas fa-images me-2"></i>Pilih File
                                 </button>
                                 <button type="button" class="btn btn-outline-success" id="cameraBtn">
                                     <i class="fas fa-camera me-2"></i>Kamera
@@ -49,32 +43,19 @@
                             </div>
                         </div>
 
-                        <!-- File Info -->
-                        <div id="fileInfo" class="mt-3 d-none">
-                            <div class="alert alert-info">
-                                <span id="fileName"></span>
-                                <button type="button" class="btn-close float-end" id="removeFile"></button>
-                            </div>
-                        </div>
+                        <div id="fileInfo" class="mt-3 d-none"></div>
                     </div>
-                    
-                    <!-- Image Preview -->
-                    <div class="mb-4 text-center" id="previewContainer" style="display: none;">
-                        <h6 class="mb-3">Preview Gambar:</h6>
-                        <div class="preview-wrapper">
-                            <img id="preview" class="img-fluid rounded shadow" 
-                                 style="max-height: 300px; border: 3px solid #28a745;" alt="Preview">
-                        </div>
-                        <p class="text-muted mt-2 small" id="imageDimensions"></p>
+
+                    <div id="previewContainer" style="display: none;">
+                        <h6 class="mb-3"><i class="fas fa-image me-2"></i>Preview Gambar:</h6>
+                        <div class="row" id="previewGrid"></div>
                     </div>
-                    
-                    <!-- Submit Button -->
-                    <button type="submit" class="btn btn-success btn-lg w-100" id="submitBtn" disabled>
-                        Upload
+
+                    <button type="submit" class="btn btn-success btn-lg w-100 mt-3" id="submitBtn" disabled>
+                        <i class="fas fa-search me-2"></i>Upload & Deteksi
                     </button>
                 </form>
 
-                <!-- Loading Indicator -->
                 <div id="loading" class="text-center mt-4 d-none">
                     <div class="spinner-border text-success" style="width: 3rem; height: 3rem;" role="status">
                         <span class="visually-hidden">Loading...</span>
@@ -83,7 +64,6 @@
                     <p class="text-muted small">Proses ini membutuhkan waktu beberapa detik</p>
                 </div>
 
-                <!-- Format yang Didukung -->
                 <div class="mt-4">
                     <h6 class="mb-2">Format yang Didukung:</h6>
                     <div class="d-flex gap-2">
@@ -96,7 +76,6 @@
             </div>
         </div>
 
-        <!-- Tips Card -->
         <div class="card mt-4">
             <div class="card-header bg-info text-white">
                 <h5 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Tips Pengambilan Gambar</h5>
@@ -134,34 +113,23 @@
     transition: all 0.3s;
     cursor: pointer;
 }
-
 .upload-area:hover {
     background-color: #e9ecef;
     border-color: #218838 !important;
 }
-
 .upload-area.dragover {
     background-color: #d4edda;
     border-color: #28a745 !important;
 }
-
 .preview-wrapper {
     position: relative;
     display: inline-block;
 }
-
-#removeFile {
-    cursor: pointer;
-}
-
-.btn-outline-success {
-    border-color: #28a745;
-    color: #28a745;
-}
-
-.btn-outline-success:hover {
-    background-color: #28a745;
-    color: #fff;
+.preview-wrapper img {
+    height: 120px;
+    object-fit: cover;
+    width: 100%;
+    border-radius: 4px;
 }
 </style>
 {% endblock %}
@@ -169,202 +137,136 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const uploadArea = document.getElementById('uploadArea');
-    const fileInput = document.getElementById('file');
-    const browseBtn = document.getElementById('browseBtn');
-    const cameraBtn = document.getElementById('cameraBtn');
-    const fileInfo = document.getElementById('fileInfo');
-    const fileName = document.getElementById('fileName');
-    const removeFile = document.getElementById('removeFile');
-    const previewContainer = document.getElementById('previewContainer');
-    const preview = document.getElementById('preview');
-    const submitBtn = document.getElementById('submitBtn');
-    const loading = document.getElementById('loading');
-    const imageDimensions = document.getElementById('imageDimensions');
-    const uploadForm = document.getElementById('uploadForm');
+    var uploadArea = document.getElementById('uploadArea');
+    var fileInput = document.getElementById('file');
+    var browseBtn = document.getElementById('browseBtn');
+    var fileInfo = document.getElementById('fileInfo');
+    var previewContainer = document.getElementById('previewContainer');
+    var previewGrid = document.getElementById('previewGrid');
+    var submitBtn = document.getElementById('submitBtn');
+    var loading = document.getElementById('loading');
+    var uploadForm = document.getElementById('uploadForm');
 
-    // Click on upload area
+    if (!uploadArea || !fileInput || !browseBtn || !submitBtn || !uploadForm) return;
+
     uploadArea.addEventListener('click', function() {
         fileInput.click();
     });
 
-    // Browse button click
     browseBtn.addEventListener('click', function(e) {
         e.stopPropagation();
-        fileInput.removeAttribute('capture');
-        fileInput.setAttribute('accept', 'image/*');
         fileInput.click();
     });
 
-    // Camera button click
-    cameraBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        fileInput.setAttribute('accept', 'image/*');
-        fileInput.setAttribute('capture', 'environment');
-        fileInput.click();
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(function(name) {
+        uploadArea.addEventListener(name, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }, false);
     });
 
-    // Drag and drop events
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, preventDefaults, false);
+    ['dragenter', 'dragover'].forEach(function(name) {
+        uploadArea.addEventListener(name, function() {
+            uploadArea.classList.add('dragover');
+        }, false);
     });
 
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-
-    ['dragenter', 'dragover'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, highlight, false);
+    ['dragleave', 'drop'].forEach(function(name) {
+        uploadArea.addEventListener(name, function() {
+            uploadArea.classList.remove('dragover');
+        }, false);
     });
 
-    ['dragleave', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, unhighlight, false);
-    });
+    uploadArea.addEventListener('drop', function(e) {
+        fileInput.files = e.dataTransfer.files;
+        handleFiles(fileInput.files);
+    }, false);
 
-    function highlight() {
-        uploadArea.classList.add('dragover');
-    }
-
-    function unhighlight() {
-        uploadArea.classList.remove('dragover');
-    }
-
-    uploadArea.addEventListener('drop', handleDrop, false);
-
-    function handleDrop(e) {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        fileInput.files = files;
-        handleFileSelect(files[0]);
-    }
-
-    // File input change
     fileInput.addEventListener('change', function() {
-        if (this.files[0]) {
-            handleFileSelect(this.files[0]);
+        if (this.files.length > 0) {
+            handleFiles(this.files);
         }
     });
 
-    // Handle file selection
-    function handleFileSelect(file) {
-        // Clear previous validation messages immediately
-        const oldValidationMsg = document.getElementById('validationMsg');
-        if (oldValidationMsg) oldValidationMsg.remove();
-        
-        // Check file size (16MB max)
-        if (file.size > 16 * 1024 * 1024) {
-            alert('File terlalu besar. Maksimal 16MB.');
-            fileInput.value = '';
-            return;
-        }
-
-        // Check file type
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp'];
-        if (!allowedTypes.includes(file.type)) {
-            alert('Tipe file tidak didukung. Gunakan JPG, JPEG, PNG, atau BMP.');
-            fileInput.value = '';
-            return;
-        }
-
-        // Show file info
-        fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
-        fileInfo.classList.remove('d-none');
-        
-        // Show preview & get dimensions
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.src = e.target.result;
-            previewContainer.style.display = 'block';
-            
-            // Get image dimensions
-            const img = new Image();
-            img.onload = function() {
-                imageDimensions.textContent = `${this.width} x ${this.height} pixels`;
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-        
-        // ===== REAL-TIME VALIDATION =====
-        // Disable submit button sampai validasi selesai
-        submitBtn.disabled = true;
-        
-        // Show loading message
-        const validationMsg = document.createElement('div');
-        validationMsg.id = 'validationMsg';
-        validationMsg.innerHTML = '<div class="alert alert-info mt-3">Sedang memvalidasi gambar...</div>';
-        fileInfo.parentElement.insertBefore(validationMsg, fileInfo.nextSibling);
-        
-        // Call validation API
-        const formData = new FormData();
-        formData.append('image', file);
-        
-        fetch('/api/validate-image', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Remove old message
-            const oldMsg = document.getElementById('validationMsg');
-            if (oldMsg) oldMsg.remove();
-            
-            if (data.is_cattle) {
-                // Gambar VALID
-                const successMsg = document.createElement('div');
-                successMsg.id = 'validationMsg';
-                successMsg.innerHTML = `<div class="alert alert-success mt-3">${data.message}</div>`;
-                fileInfo.parentElement.insertBefore(successMsg, fileInfo.nextSibling);
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Deteksi';
-            } else {
-                // Gambar INVALID
-                const errorMsg = document.createElement('div');
-                errorMsg.id = 'validationMsg';
-                errorMsg.innerHTML = `<div class="alert alert-danger mt-3">${data.message || 'Gambar ditolak'}</div>`;
-                fileInfo.parentElement.insertBefore(errorMsg, fileInfo.nextSibling);
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Upload';
-                
-                // Clear file input and preview
-                fileInput.value = '';
-                fileInfo.classList.add('d-none');
-                previewContainer.style.display = 'none';
+    function handleFiles(files) {
+        var validFiles = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            if (f.size > 16 * 1024 * 1024) {
+                alert('File ' + f.name + ' terlalu besar (maks 16MB)');
+                continue;
             }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            const oldMsg = document.getElementById('validationMsg');
-            if (oldMsg) oldMsg.remove();
-            
-            const errorMsg = document.createElement('div');
-            errorMsg.id = 'validationMsg';
-            errorMsg.innerHTML = `<div class="alert alert-warning mt-3">Error: ${error}</div>`;
-            fileInfo.parentElement.insertBefore(errorMsg, fileInfo.nextSibling);
+            var allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp'];
+            if (allowed.indexOf(f.type) === -1) {
+                alert('File ' + f.name + ' tidak didukung');
+                continue;
+            }
+            validFiles.push(f);
+        }
+
+        if (validFiles.length === 0) {
+            fileInput.value = '';
             submitBtn.disabled = true;
-        });
+            submitBtn.innerHTML = '<i class="fas fa-search me-2"></i>Upload & Deteksi';
+            if (fileInfo) fileInfo.classList.add('d-none');
+            if (previewContainer) previewContainer.style.display = 'none';
+            return;
+        }
+
+        if (fileInfo) {
+            fileInfo.classList.remove('d-none');
+            fileInfo.innerHTML = '<div class="alert alert-info">' + validFiles.length + ' file dipilih</div>';
+        }
+
+        if (previewContainer && previewGrid) {
+            previewContainer.style.display = 'block';
+            previewGrid.innerHTML = '';
+
+            for (var j = 0; j < validFiles.length; j++) {
+                (function(file) {
+                    var col = document.createElement('div');
+                    col.className = 'col-md-3 col-6 mb-3';
+                    col.innerHTML = '<div class="card h-100"><div class="card-body p-1 text-center"><div class="preview-wrapper"><img></div><small class="text-muted mt-1 d-block">' + file.name + '</small></div></div>';
+                    previewGrid.appendChild(col);
+
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        col.querySelector('img').src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                })(validFiles[j]);
+            }
+        }
+
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-search me-2"></i>Deteksi Semua (' + validFiles.length + ' gambar)';
     }
 
-    // Remove file
-    removeFile.addEventListener('click', function() {
-        fileInput.value = '';
-        fileInfo.classList.add('d-none');
-        previewContainer.style.display = 'none';
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Upload';
-        
-        // Clear validation message
-        const validationMsg = document.getElementById('validationMsg');
-        if (validationMsg) validationMsg.remove();
-    });
-
-    // Form submit
     uploadForm.addEventListener('submit', function(e) {
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Sedang diproses...';
-        loading.classList.remove('d-none');
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
+        if (loading) loading.classList.remove('d-none');
     });
+
+    // Camera button
+    var cameraBtn = document.getElementById('cameraBtn');
+    if (cameraBtn) {
+        cameraBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var camInput = document.createElement('input');
+            camInput.type = 'file';
+            camInput.accept = 'image/*';
+            camInput.capture = 'environment';
+            camInput.multiple = true;
+            camInput.onchange = function() {
+                if (this.files.length > 0) {
+                    fileInput.files = this.files;
+                    handleFiles(this.files);
+                }
+            };
+            camInput.click();
+        });
+    }
 });
 </script>
 {% endblock %}

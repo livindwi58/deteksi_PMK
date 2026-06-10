@@ -252,10 +252,11 @@ function createHistoryRow(item) {
     tr.dataset.source = item.source || 'image_processing';
 
     const fileName = item.filename || item.original_filename || item.image_path || '-';
+    const count = item.image_count || 1;
     const imageCell = item.source === 'manual_expert_system'
         ? '<span class="badge bg-secondary">Sistem Pakar</span>'
         : item.image_url
-        ? `<a href="${item.image_url}" target="_blank"><i class="fas fa-image me-1"></i>${fileName.length > 20 ? fileName.slice(0, 20) + '...' : fileName}</a>`
+        ? `<a href="${item.detail_url}"><i class="fas fa-image me-1"></i>${fileName.length > 20 ? fileName.slice(0, 20) + '...' : fileName}</a>${count > 1 ? ` <span class="badge bg-info">${count} gambar</span>` : ''}`
         : fileName;
 
     const badgeClass = item.prediction === 'sakit' ? 'bg-warning text-dark' : 'bg-success';

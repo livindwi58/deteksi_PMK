@@ -46,6 +46,7 @@ def get_symptom_desc(symptom_code):
 try:
     from utils.mysql_db import (
         save_prediction_mysql,
+        save_batch_prediction_mysql,
         get_recent_predictions_mysql,
         get_prediction_by_id,
         init_mysql_tables,
@@ -82,30 +83,38 @@ except Exception as import_err:
 model = None
 scaler = None
 label_encoder = None
+multiclass_model = None
+multiclass_scaler = None
+multiclass_label_encoder = None
 extractor = FeatureExtractor()
 model_loading = False  
 model_loaded = False   
 
 def _load_model_background():
-    global model, scaler, label_encoder, model_loading, model_loaded
+    global model, scaler, label_encoder, multiclass_model, multiclass_scaler, multiclass_label_encoder
+    global model_loading, model_loaded
     
-    # Prevent double-loading
     if model_loading or model_loaded:
         return
     
     model_loading = True
     try:
         from utils.helpers import load_model
-        print('[APP] Loading ML model in background...')
+        print('[APP] Loading ML models in background...')
         m, s, le = load_model()
         model, scaler, label_encoder = m, s, le
+        try:
+            mm, ms, mle = load_model(prefix='multiclass_')
+            multiclass_model, multiclass_scaler, multiclass_label_encoder = mm, ms, mle
+        except Exception:
+            print('[APP] ⚠️ Multi-class model not loaded (binary-only mode)')
         model_loaded = True
-        print('[APP] Model loaded successfully.')
+        print('[APP] Models loaded successfully.')
     except Exception as e:
         model = None
         scaler = None
         label_encoder = None
-        model_loaded = True  # Mark as done to prevent retry loop
+        model_loaded = True
         print(f"[APP] ❌ Background model load failed: {e}")
     finally:
         model_loading = False
@@ -115,7 +124,6 @@ threading.Thread(target=_load_model_background, daemon=True).start()
 
 
 def is_model_ready():
-    """Check if model is loaded and ready to use"""
     return model is not None and scaler is not None and label_encoder is not None
 
 
@@ -180,6 +188,13 @@ def _serialize_prediction_row(prediction_row):
     show_confidence = source != 'manual_expert_system'
     display_label = diagnosis_label if source == 'manual_expert_system' and diagnosis_label else ('Positif PMK' if prediction == 'sakit' else 'Sehat')
 
+    images_data = prediction_row.get('images_data')
+    image_count = prediction_row.get('image_count', 1)
+    sick_count = sum(1 for img in images_data if str(img.get('prediction', '')).lower() == 'sakit') if images_data else (1 if prediction == 'sakit' else 0)
+
+    if image_count > 1:
+        display_label = f'{sick_count} sakit / {image_count - sick_count} sehat ({image_count} gambar)'
+
     return {
         'id': pred_id,
         'original_filename': prediction_row.get('original_filename') or '',
@@ -193,6 +208,8 @@ def _serialize_prediction_row(prediction_row):
         'confidence': round(confidence, 1) if show_confidence else None,
         'show_confidence': show_confidence,
         'timestamp': prediction_row.get('timestamp'),
+        'image_count': image_count,
+        'images_data': images_data,
         'detail_url': url_for('detail_deteksi', pred_id=pred_id),
         'image_url': url_for('uploaded_file', filename=prediction_row.get('filename') or '') if prediction_row.get('filename') else None,
     }
@@ -388,164 +405,212 @@ def api_validate_image():
                 print(f"[VALIDATE API] ⚠️ Error menghapus temp file: {e}")
 
 
+def _predict_single(filepath, original_filename):
+    """Process a single image and return prediction result dict."""
+    features = extractor.extract_all_features(*preprocess_pipeline(filepath))
+    features_scaled = scaler.transform([features])
+
+    pred_encoded = model.predict(features_scaled)[0]
+    prediction = label_encoder.inverse_transform([pred_encoded])[0]
+    confidence = estimate_prediction_confidence(model, features_scaled)
+    if confidence is None:
+        confidence = float(max(model.predict_proba(features_scaled)[0]) * 100)
+
+    pmk_type = None
+    if prediction.lower() == 'sakit' and multiclass_model is not None:
+        multi_scaled = multiclass_scaler.transform([features])
+        multi_enc = multiclass_model.predict(multi_scaled)[0]
+        pmk_type = multiclass_label_encoder.inverse_transform([multi_enc])[0]
+
+    features_dict = {name: float(features[i]) for i, name in enumerate(extractor.feature_names)}
+    features_table = list(zip(extractor.feature_names, [round(float(x), 4) for x in features]))
+
+    return {
+        'original_filename': original_filename,
+        'prediction': prediction,
+        'pmk_type': pmk_type,
+        'confidence': confidence,
+        'features': features,
+        'features_dict': features_dict,
+        'features_table': features_table,
+    }
+
+
+def _save_prediction_to_mysql(original_filename, filename, filepath, prediction, confidence, features_dict):
+    """Save a single prediction to MySQL and return rowid."""
+    rowid = None
+    if MYSQL_AVAILABLE:
+        try:
+            rowid = save_prediction_mysql(original_filename, filename, filepath, prediction, confidence, features_dict)
+            print(f"✓ Saved prediction to MySQL, id={rowid}")
+        except Exception as e:
+            import traceback
+            print(f"✗ Gagal menyimpan ke MySQL: {e}")
+            traceback.print_exc()
+    return rowid
+
+
+def _append_prediction_to_csv(original_filename, filename, prediction, confidence, features, features_dict):
+    """Append a single prediction row to CSV fallback."""
+    try:
+        os.makedirs(os.path.join(BASE_DIR, 'results'), exist_ok=True)
+        data = {'image_path': [original_filename], 'filename': [filename],
+                'prediction': [prediction], 'confidence': [confidence],
+                'timestamp': [pd.Timestamp.now()]}
+        for i, name in enumerate(extractor.feature_names):
+            data[name] = [float(features[i])]
+        df = pd.DataFrame(data)
+        csv_path = os.path.join(BASE_DIR, 'results', 'predictions.csv')
+        if os.path.exists(csv_path):
+            try:
+                existing_cols = pd.read_csv(csv_path, nrows=0).columns.tolist()
+            except Exception:
+                existing_cols = []
+            desired_cols = list(df.columns)
+            if not set(desired_cols).issubset(set(existing_cols)):
+                try:
+                    df_existing = pd.read_csv(csv_path)
+                    for c in desired_cols:
+                        if c not in df_existing.columns:
+                            df_existing[c] = ''
+                    df_existing = df_existing.reindex(columns=desired_cols)
+                    df_existing.to_csv(csv_path, index=False)
+                except Exception as e:
+                    print(f"Gagal memigrasi CSV lama: {e}")
+            df.to_csv(csv_path, mode='a', header=False, index=False)
+        else:
+            df.to_csv(csv_path, index=False)
+    except Exception as e:
+        print(f"Gagal menyimpan prediksi ke CSV: {e}")
+
+
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'image' not in request.files:
         flash('File tidak ditemukan', 'error')
         return redirect(url_for('index'))
 
-    file = request.files['image']
-    if file.filename == '':
+    files = request.files.getlist('image')
+    if not files or (len(files) == 1 and files[0].filename == ''):
         flash('Tidak ada file yang dipilih', 'error')
         return redirect(url_for('index'))
 
-    if file and allowed_file(file.filename):
-        # Generate unique filename to avoid conflicts
+    if not is_model_ready():
+        flash('Model belum tersedia. Jalankan training terlebih dahulu.', 'error')
+        return redirect(url_for('index'))
+
+    results = []
+
+    for file in files:
+        if file.filename == '' or not allowed_file(file.filename):
+            continue
+
         original_filename = secure_filename(file.filename)
         ext = original_filename.rsplit('.', 1)[1].lower()
         filename = f"{uuid.uuid4()}.{ext}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
-        # Validasi ulang di backend supaya request langsung ke /predict tidak bisa bypass.
-        is_cattle, validation_confidence, validation_reason = validate_cattle_image(
-            filepath,
-            confidence_threshold=0.65,
-        )
+        is_cattle, validation_confidence, validation_reason = validate_cattle_image(filepath, confidence_threshold=0.65)
         if not is_cattle:
             if os.path.exists(filepath):
                 try:
                     os.remove(filepath)
-                    print(f"[PREDICT] ✓ File DIHAPUS (bukan sapi): {filename}")
-                except Exception as del_err:
-                    print(f"[PREDICT] ⚠️ Error menghapus file non-sapi: {del_err}")
-
-            flash(validation_reason or 'Gambar selain sapi tidak diizinkan', 'error')
-            return redirect(url_for('index'))
-
-        print(f"[PREDICT] ✅ File lolos validasi backend: {filename} ({validation_confidence*100:.0f}%)")
-
-        if not is_model_ready():
-            # Model belum siap - HAPUS FILE
-            if os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                    print(f"[PREDICT] ✓ File DIHAPUS (model belum ready): {filename}")
-                except Exception as del_err:
-                    print(f"[PREDICT] ⚠️ Error menghapus file: {del_err}")
-            
-            flash('Model belum tersedia. Jalankan training terlebih dahulu.', 'error')
-            return redirect(url_for('index'))
-
-        # Preprocess and extract
-        img_rgb, gray_processed = preprocess_pipeline(filepath)
-        features = extractor.extract_all_features(img_rgb, gray_processed)
-        features_scaled = scaler.transform([features])
-
-        pred_encoded = model.predict(features_scaled)[0]
-        prediction = label_encoder.inverse_transform([pred_encoded])[0]
-        confidence = estimate_prediction_confidence(model, features_scaled)
-        if confidence is None:
-            probabilities = model.predict_proba(features_scaled)[0]
-            confidence = float(max(probabilities) * 100)
-
-        # Prepare feature dictionary for database
-        features_dict = {name: float(features[i]) for i, name in enumerate(extractor.feature_names)}
-        
-        # Try to save to MySQL first (primary storage)
-        rowid = None
-        if MYSQL_AVAILABLE:
-            try:
-                rowid = save_prediction_mysql(original_filename, filename, filepath, prediction, confidence, features_dict)
-                print(f"✓ Saved prediction to MySQL, id={rowid}")
-                # store DB id in session so result page can link to the new history row
-                try:
-                    session.setdefault('last_prediction', {})
-                    session['last_prediction']['db_id'] = int(rowid) if rowid is not None else None
                 except Exception:
                     pass
-            except Exception as e:
-                import traceback
-                print(f"✗ Gagal menyimpan ke MySQL: {e}")
-                traceback.print_exc()
+            continue
 
-        # Also save to CSV as fallback/backup (ensure consistent columns, migrate old files if needed)
+        result = _predict_single(filepath, original_filename)
+        result['filename'] = filename
+        result['filepath'] = filepath
+
+        results.append(result)
+
+    if not results:
+        flash('Tidak ada gambar sapi yang valid untuk diproses', 'error')
+        return redirect(url_for('index'))
+
+    # Save ALL images as ONE prediction row
+    images_for_db = []
+    for r in results:
+        images_for_db.append({
+            'original_filename': r['original_filename'],
+            'filename': r['filename'],
+            'image_path': r['filepath'],
+            'prediction': r['prediction'],
+            'pmk_type': r['pmk_type'],
+            'confidence': r['confidence'],
+        })
+
+    pred_id = None
+    if MYSQL_AVAILABLE:
         try:
-            os.makedirs(os.path.join(BASE_DIR, 'results'), exist_ok=True)
-            data = {
-                'image_path': [original_filename],  # Simpan nama asli
-                'filename': [filename],  # Simpan nama unik
-                'prediction': [prediction],
-                'confidence': [confidence],
-                'timestamp': [pd.Timestamp.now()]
-            }
-            for i, name in enumerate(extractor.feature_names):
-                data[name] = [float(features[i])]
-
-            df = pd.DataFrame(data)
-            csv_path = os.path.join(BASE_DIR, 'results', 'predictions.csv')
-
-            if os.path.exists(csv_path):
-                # Check existing columns
-                try:
-                    existing_cols = pd.read_csv(csv_path, nrows=0).columns.tolist()
-                except Exception:
-                    existing_cols = []
-
-                desired_cols = list(df.columns)
-
-                # If existing file missing any desired columns, migrate by adding empty columns and re-saving
-                if not set(desired_cols).issubset(set(existing_cols)):
-                    try:
-                        df_existing = pd.read_csv(csv_path)
-                        for c in desired_cols:
-                            if c not in df_existing.columns:
-                                df_existing[c] = ''
-                        # Reorder columns to desired order
-                        df_existing = df_existing.reindex(columns=desired_cols)
-                        df_existing.to_csv(csv_path, index=False)
-                    except Exception as e:
-                        print(f"Gagal memigrasi CSV lama: {e}")
-
-                # Append new row without header
-                df.to_csv(csv_path, mode='a', header=False, index=False)
-            else:
-                df.to_csv(csv_path, index=False)
+            pred_id = save_batch_prediction_mysql(images_for_db)
+            print(f"✓ Saved batch prediction to MySQL, id={pred_id} ({len(results)} images)")
         except Exception as e:
-            print(f"Gagal menyimpan prediksi ke CSV: {e}")
+            import traceback
+            print(f"✗ Gagal menyimpan batch ke MySQL: {e}")
+            traceback.print_exc()
 
-        # Compact features table for session (round values to reduce size)
-        features_table = list(zip(extractor.feature_names, [round(float(x), 4) for x in features]))
+    # Also save to CSV (batch summary)
+    _append_prediction_to_csv(
+        f"{len(results)} images batch",
+        f"batch_{pred_id}" if pred_id else "batch_unknown",
+        'sakit' if any(r['prediction'].lower() == 'sakit' for r in results) else 'sehat',
+        max(r['confidence'] for r in results),
+        results[0]['features'],
+        results[0]['features_dict']
+    )
 
-        # Simpan hasil prediksi ke session untuk digunakan di halaman result
-        existing_db_id = None
-        try:
-            existing_db_id = session.get('last_prediction', {}).get('db_id')
-        except Exception:
-            existing_db_id = None
+    # Build image data for session/template
+    upload_images = []
+    for r in results:
+        upload_images.append({
+            'filename': r['filename'],
+            'original_filename': r['original_filename'],
+            'filepath': r['filepath'],
+            'prediction': r['prediction'],
+            'pmk_type': r['pmk_type'],
+            'confidence': r['confidence'],
+            'features_table': r['features_table'],
+        })
 
-        session['last_prediction'] = {
-            'filename': filename,
-            'original_filename': original_filename,
-            'prediction': prediction,
-            'confidence': confidence,
-            'features_table': features_table,
-            'filepath': filepath,
-            'source': 'image_processing',
-            'db_id': existing_db_id
-        }
+    # Determine if any sick results
+    sick_pmk_types = set()
+    for r in results:
+        if r['prediction'].lower() == 'sakit' and r['pmk_type']:
+            sick_pmk_types.add(r['pmk_type'])
 
-        # Tentukan template berdasarkan hasil prediksi
-        # Tambahkan jeda singkat agar tampilan hasil tidak muncul terlalu cepat
-        if prediction.lower() == 'sakit':
-            time.sleep(1.5)
-            return redirect(url_for('result_sick'))
-        else:
-            time.sleep(1.5)
-            return redirect(url_for('result_healthy'))
+    pmk_to_symptoms = {
+        'pmk_oral': ['G02', 'G03', 'G04', 'G10', 'G14', 'G18', 'G19', 'G20', 'G21'],
+        'pmk_podal': ['G05', 'G06', 'G15', 'G22', 'G23', 'G24'],
+    }
 
-    flash('Tipe file tidak didukung', 'error')
-    return redirect(url_for('index'))
+    preselected = set()
+    for pmk_type in sick_pmk_types:
+        key = pmk_type.lower()
+        if key in pmk_to_symptoms:
+            preselected.update(pmk_to_symptoms[key])
+
+    # Store all images in session for expert system display
+    session['last_prediction'] = {
+        'db_id': pred_id,
+        'filename': upload_images[0]['filename'],
+        'original_filename': upload_images[0]['original_filename'],
+        'prediction': 'sakit' if sick_pmk_types else 'sehat',
+        'confidence': upload_images[0]['confidence'],
+        'source': 'image_processing',
+    }
+    session['upload_images_data'] = upload_images
+
+    time.sleep(1.0)
+
+    if preselected:
+        symptoms_param = ','.join(sorted(preselected))
+        return redirect(url_for('expert_system_page', mode='image', symptoms=symptoms_param))
+    else:
+        flash(f'Semua {len(results)} gambar terdeteksi SEHAT', 'success')
+        return redirect(url_for('result_healthy'))
 
 
 @app.route('/result/healthy')
@@ -744,12 +809,14 @@ def expert_system_page():
         
         # Jika ada hasil prediksi berbasis image processing sebelumnya, tambahkan ke konteks
         last_prediction = session.get('last_prediction', {})
+        upload_images = session.get('upload_images_data', [])
         image_info = None
         if use_image_context and last_prediction.get('source') == 'image_processing':
             image_info = {
                 'filename': last_prediction.get('original_filename', ''),
                 'prediction': last_prediction.get('prediction', ''),
-                'confidence': last_prediction.get('confidence', 0)
+                'confidence': last_prediction.get('confidence', 0),
+                'db_id': last_prediction.get('db_id'),
             }
         
         return render_template('expert_system.html', 
@@ -758,23 +825,34 @@ def expert_system_page():
                              diagnosis=diagnosis,
                              selected_gejala=gejala_terpilih,
                              image_info=image_info,
+                             upload_images=upload_images,
                              context_mode='image' if use_image_context else 'manual')
     
     # GET request - tampilkan form
+    # Parse preselected symptoms from query param
+    preselected_symptoms = []
+    symptoms_param = request.args.get('symptoms', '')
+    if symptoms_param:
+        preselected_symptoms = [s.strip() for s in symptoms_param.split(',') if s.strip()]
+
     # Ambil informasi gambar dari session jika hasil sebelumnya berasal dari image processing
     last_prediction = session.get('last_prediction', {})
+    upload_images = session.get('upload_images_data', [])
     image_info = None
     if use_image_context and last_prediction.get('source') == 'image_processing':
         image_info = {
             'filename': last_prediction.get('original_filename', ''),
             'prediction': last_prediction.get('prediction', ''),
-            'confidence': last_prediction.get('confidence', 0)
+            'confidence': last_prediction.get('confidence', 0),
+            'db_id': last_prediction.get('db_id'),
         }
     
     return render_template('expert_system.html', 
                          gejala_list=expert_system.get_gejala_list(),
                          gejala_groups=expert_system.get_gejala_groups(),
                          image_info=image_info,
+                         upload_images=upload_images,
+                         selected_gejala=preselected_symptoms,
                          context_mode='image' if use_image_context else 'manual')
 
 
