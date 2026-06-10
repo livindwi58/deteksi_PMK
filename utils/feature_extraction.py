@@ -14,9 +14,8 @@ class FeatureExtractor:
             'mean_hue', 'mean_saturation', 'mean_value',
             # HSV std (3)
             'std_hue', 'std_saturation', 'std_value',
-            # GLCM (6)
+            # GLCM (4)
             'contrast', 'homogeneity', 'correlation', 'energy',
-            'dissimilarity', 'ASM',
             # Color histogram (3 channels x n_hist_bins)
             *[f'hist_r_{i}' for i in range(n_hist_bins)],
             *[f'hist_g_{i}' for i in range(n_hist_bins)],
@@ -53,8 +52,7 @@ class FeatureExtractor:
             glcm = graycomatrix(gray, distances=[1, 2, 3],
                                 angles=[0, np.pi / 4, np.pi / 2, 3 * np.pi / 4],
                                 levels=256, symmetric=True, normed=True)
-            props = ['contrast', 'homogeneity', 'correlation', 'energy',
-                     'dissimilarity', 'ASM']
+            props = ['contrast', 'homogeneity', 'correlation', 'energy']
             return [np.mean(graycoprops(glcm, prop)) for prop in props]
         except Exception:
             return [0.0] * 6

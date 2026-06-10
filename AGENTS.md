@@ -77,7 +77,7 @@ deteksi_PMK/
 │   ├── __init__.py
 │   ├── mysql_db.py            # SQLAlchemy ORM — models, CRUD, seed data (916 baris)
 │   ├── preprocessing.py       # Validasi sapi + preprocessing pipeline (340 baris)
-│   ├── feature_extraction.py   # Ekstraksi fitur: RGB avg + HSV + GLCM + histogram + Hu (46 fitur)
+│   ├── feature_extraction.py   # Ekstraksi fitur: RGB avg + HSV + GLCM + histogram + Hu (44 fitur)
 │   └── helpers.py             # Load/save model, dataset prep, confidence estimation (237 baris)
 │
 ├── templates/                 # Jinja2 templates
@@ -121,7 +121,7 @@ User upload gambar
   │
   ▼
 [feature_extraction.py] FeatureExtractor.extract_all_features()
-  → 46 fitur: [RGB avg (3), HSV mean+std (6), GLCM (6), histogram 24, Hu (7)]
+  → 44 fitur: [RGB avg (3), HSV mean+std (6), GLCM (4), histogram 24, Hu (7)]
   │
   ▼
 [helpers.py] scaler.transform() → [BINARY MODEL] predict()
@@ -310,7 +310,7 @@ expert_rules_expert_symptoms
 **Arsitektur Hierarchical (2-level):**
 
 ```
-Input image → 46 fitur (RGB+HSV+GLCM+Histogram+Hu)
+Input image → 44 fitur (RGB+HSV+GLCM+Histogram+Hu)
                    │
             ┌──────┴──────┐
             ▼              ▼
@@ -350,12 +350,12 @@ Input image → 46 fitur (RGB+HSV+GLCM+Histogram+Hu)
 
 | Parameter         | Value                                                                       |
 | ----------------- | --------------------------------------------------------------------------- |
-| **Features**      | 46: avg_red, avg_green, avg_blue, hsv_h_mean, hsv_h_std, hsv_s_mean, hsv_s_std, hsv_v_mean, hsv_v_std, contrast, homogeneity, correlation, energy, dissimilarity, asm, 8-bin histogram × 3 channels (24), hu_moment_0..6 (7) |
+| **Features**      | 44: avg_red, avg_green, avg_blue, hsv_h_mean, hsv_h_std, hsv_s_mean, hsv_s_std, hsv_v_mean, hsv_v_std, contrast, homogeneity, correlation, energy, 8-bin histogram × 3 channels (24), hu_moment_0..6 (7) |
 | **Image size**      | 256×256                                                                     |
 | **Preprocessing** | Otsu threshold, mask, resize                                                |
 | **Scaling**       | StandardScaler                                                              |
 | **Output**        | Binary: `sehat` / `sakit`; Multi-class: `pmk_oral`, `pmk_podal`, `pmk_laktasi`, `pmk_akut_general`, ... |
-| **Confidence**    | Custom weighted neighbor, clipped 50.0–98.5%                                |
+| **Confidence**    | Custom weighted neighbor, clipped 50.0–89.5%                                |
 | **Class detection** | Auto-detect all folders under `dataset/` — `healthy` → `sehat`, `pmk_*` → nama folder |
 
 > **Jika menambah/mengubah fitur**, update:

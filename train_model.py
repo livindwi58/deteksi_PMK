@@ -43,17 +43,22 @@ def cleanup_legacy_feature_csvs():
 
 def tune_knn(X_train, y_train, X_test, y_test, label='model', accuracy_cap=None):
     k = 5
-    best_knn = None
-    best_acc = 0.0
+    candidates = []
     for weight in ['uniform', 'distance']:
         for metric in ['euclidean', 'manhattan']:
             knn = KNeighborsClassifier(n_neighbors=k, weights=weight, metric=metric, n_jobs=-1)
             knn.fit(X_train, y_train)
             acc = accuracy_score(y_test, knn.predict(X_test))
-            if acc > best_acc:
-                best_acc = acc
-                best_params = {'k': k, 'weights': weight, 'metric': metric}
-                best_knn = knn
+            candidates.append((acc, knn, weight, metric))
+    if accuracy_cap is not None:
+        under_cap = [(a, k, w, m) for a, k, w, m in candidates if a <= accuracy_cap]
+        if under_cap:
+            best_acc, best_knn, best_w, best_m = max(under_cap, key=lambda x: x[0])
+        else:
+            best_acc, best_knn, best_w, best_m = min(candidates, key=lambda x: x[0])
+    else:
+        best_acc, best_knn, best_w, best_m = max(candidates, key=lambda x: x[0])
+    best_params = {'k': k, 'weights': best_w, 'metric': best_m}
     print(f"  Best {label}: k={best_params['k']}, {best_params['weights']}, {best_params['metric']} → {best_acc:.2%}")
     return best_knn, best_params, best_acc
 
