@@ -5,6 +5,9 @@ models/*
 !models/scaler.pkl
 !models/label_encoder.pkl
 !models/pca.pkl
+!models/multiclass_knn_model.pkl
+!models/multiclass_scaler.pkl
+!models/multiclass_label_encoder.pkl
 results/*
 uploads/*
 .venv
