@@ -597,8 +597,10 @@ def predict():
         'db_id': pred_id,
         'filename': upload_images[0]['filename'],
         'original_filename': upload_images[0]['original_filename'],
+        'filepath': upload_images[0]['filepath'],
         'prediction': 'sakit' if sick_pmk_types else 'sehat',
         'confidence': upload_images[0]['confidence'],
+        'features_table': upload_images[0]['features_table'],
         'source': 'image_processing',
     }
     session['upload_images_data'] = upload_images
