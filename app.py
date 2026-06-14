@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from utils.helpers import load_model, estimate_prediction_confidence
-from utils.preprocessing import preprocess_image, preprocess_pipeline, validate_cattle_image
+from utils.preprocessing import preprocess_image, preprocess_pipeline, validate_cattle_image, detect_udder
 from utils.feature_extraction import FeatureExtractor
 from expert_system import ForwardChaining, KnowledgeBase  # Import sistem pakar
 
@@ -422,6 +422,20 @@ def _predict_single(filepath, original_filename):
         multi_enc = multiclass_model.predict(multi_scaled)[0]
         pmk_type = multiclass_label_encoder.inverse_transform([multi_enc])[0]
 
+    # Fallback heuristic: jika model menandai 'sehat' tapi gambar mengandung ciri ambing/puting,
+    # anggap sebagai laktasi (pmk_laktasi) dan ubah prediksi agar sistem pakar terpicu.
+    if prediction.lower() == 'sehat':
+        try:
+            udder_detected, udder_score = detect_udder(filepath)
+            if udder_detected:
+                prediction = 'sakit'
+                pmk_type = 'pmk_laktasi'
+                # update confidence minimal berdasarkan score heuristik
+                confidence = max(confidence, min(udder_score * 100.0, 95.0))
+                print(f"[HEURISTIC] Udder heuristic triggered for {original_filename} | score={udder_score:.2f}")
+        except Exception as e:
+            print(f"[HEURISTIC] Udder heuristic error: {e}")
+
     features_dict = {name: float(features[i]) for i, name in enumerate(extractor.feature_names)}
     features_table = list(zip(extractor.feature_names, [round(float(x), 4) for x in features]))
 
@@ -584,6 +598,10 @@ def predict():
     pmk_to_symptoms = {
         'pmk_oral': ['G02', 'G03', 'G04', 'G10', 'G14', 'G18', 'G19', 'G20', 'G21'],
         'pmk_podal': ['G05', 'G06', 'G15', 'G22', 'G23', 'G24'],
+        # Udder (laktasi) — gunakan hanya gejala spesifik ambing/puting
+        'pmk_laktasi': ['G07', 'G08', 'G09', 'G26', 'G27'],
+        # General akut: kombinasi gejala yang menunjukkan PMK akut/menular luas
+        'pmk_akut_general': ['G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07', 'G09', 'G11', 'G12', 'G14', 'G18', 'G20', 'G22', 'G23', 'G24', 'G26']
     }
 
     preselected = set()
@@ -591,6 +609,15 @@ def predict():
         key = pmk_type.lower()
         if key in pmk_to_symptoms:
             preselected.update(pmk_to_symptoms[key])
+
+    # Jika lebih dari satu body-part berbeda terdeteksi sakit (misal: mulut+kaki, mulut+puting, kaki+puting),
+    # anggap kemungkinan PMK akut/general dan preselect gejala umum akut juga.
+    body_part_keys = {k for k in sick_pmk_types if k in {'pmk_oral', 'pmk_podal', 'pmk_laktasi'}}
+    if len(body_part_keys) >= 2:
+        # tambahkan gejala PMK akut general
+        preselected.update(pmk_to_symptoms.get('pmk_akut_general', []))
+        # juga tambahkan tipe pmk_akut_general ke hasil sehingga UI/riwayat menampilkan tipe ini
+        sick_pmk_types.add('pmk_akut_general')
 
     # Store all images in session for expert system display
     session['last_prediction'] = {

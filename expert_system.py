@@ -5,7 +5,7 @@ DISEASE_ALIAS_MAP = {
     'P01': {'ORAL', 'ORAL_KUAT', 'P01'},
     'P02': {'PODAL', 'PODAL_KUAT', 'P02'},
     'P03': {'LAKTASI', 'LAKTASI_KUAT', 'P03'},
-    'P05': {'AKUT_GENERAL', 'AKUT_GENERAL_KUAT', 'P05'},
+    'P04': {'AKUT_GENERAL', 'AKUT_GENERAL_KUAT', 'P04'},
 }
 
 DEFAULT_GEJALA_GROUP_TITLES = OrderedDict([
@@ -210,7 +210,7 @@ class ForwardChaining:
             'P01': 'oral',
             'P02': 'podal',
             'P03': 'laktasi',
-            'P05': 'akut umum'
+            'P04': 'akut umum'
         }
         
         diagnosis = []

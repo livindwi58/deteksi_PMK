@@ -3,6 +3,63 @@ import numpy as np
 from PIL import Image
 
 
+def detect_udder(image_path, resize_to=(256, 256)):
+    """
+    Heuristik sederhana untuk mendeteksi keberadaan ambing/puting (laktasi).
+    Mengembalikan (is_udder_detected, score) dengan score 0..1.
+
+    Pendekatan: deteksi warna 'pinkish' / kulit terang pada area tengah/bawah gambar
+    dan hitung proporsi area serta presence kontur cukup besar.
+    """
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            pil_img = Image.open(image_path).convert('RGB')
+            img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+        img = cv2.resize(img, resize_to)
+        h, w = img.shape[:2]
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+        h_channel = hsv[:, :, 0].astype(np.float32)
+        s_channel = hsv[:, :, 1].astype(np.float32)
+        v_channel = hsv[:, :, 2].astype(np.float32)
+
+        # Rentang hue untuk warna pink/putih-cerah bisa jatuh dekat 0 (merah muda)
+        pink_mask = (((h_channel <= 10) | (h_channel >= 170)) & (s_channel >= 20) & (v_channel >= 120))
+        light_mask = (v_channel >= 200) & (s_channel <= 80)
+
+        candidate = pink_mask | light_mask
+
+        # Fokus ke area tengah-bawah (ambing biasanya di bagian bawah/ tengah gambar)
+        y_start = int(h * 0.35)
+        region = candidate[y_start:h, :]
+
+        area_ratio = float(np.sum(region)) / (region.size + 1e-9)
+
+        # Temukan kontur di mask untuk memperkuat sinyal (bentuk puting/lesi kecil)
+        mask_uint8 = (candidate.astype('uint8') * 255)
+        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        large_contours = [c for c in contours if cv2.contourArea(c) >= 80]
+
+        score = 0.0
+        # area_ratio threshold yang longgar
+        if area_ratio >= 0.02:
+            score += 0.6
+        elif area_ratio >= 0.008:
+            score += 0.35
+
+        # kontur mendukung adanya struktur
+        if len(large_contours) >= 1:
+            score += 0.25
+
+        score = min(1.0, score)
+        is_udder = score >= 0.55
+        return is_udder, score
+    except Exception:
+        return False, 0.0
+
+
 def _detect_human_face(gray_image):
     """Return (detected, face_area_ratio) for human face detection."""
     try:
