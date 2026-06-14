@@ -202,9 +202,9 @@ class ForwardChaining:
                 'message': 'Gejala yang dipilih masih belum cukup untuk menentukan PMK.'
             }
         
-        # Urutkan hasil dari yang paling cocok
+        # Urutkan hasil dari yang paling cocok dan ambil yang teratas saja
         hasil_urut = sorted(hasil_inferensi.items(), key=lambda x: (x[1][0], x[1][1]), reverse=True)
-        
+
         # Pemetaan tingkat keparahan
         severity_map = {
             'P01': 'oral',
@@ -212,48 +212,36 @@ class ForwardChaining:
             'P03': 'laktasi',
             'P04': 'akut umum'
         }
-        
-        diagnosis = []
-        for kode_penyakit, (score, _matched_count) in hasil_urut:
-            penyakit = self.kb.penyakit[kode_penyakit]
-            relevant_aliases = DISEASE_ALIAS_MAP.get(kode_penyakit, {kode_penyakit})
-            evidence_rules = [rule for rule in self.matched_rules if rule['hasil'] in relevant_aliases]
 
-            if not evidence_rules:
-                all_evidence = list(self.disease_evidence.get(kode_penyakit, []))
-                all_evidence.sort(key=lambda r: (r.get('coverage', 0.0), r.get('matched_count', 0)), reverse=True)
-                evidence_rules = all_evidence[:3]
+        # Ambil hanya diagnosis teratas (top-1)
+        top_kode = hasil_urut[0][0]
+        top_score = hasil_urut[0][1][0]
 
-            diagnosis.append({
-                'kode': kode_penyakit,
-                'severity': severity_map.get(kode_penyakit, 'unknown'),
-                'nama': penyakit['nama'],
-                'deskripsi': penyakit['deskripsi'],
-                'solusi': penyakit['solusi'],
-                'score': score,
-                'gejala_teramati': [g for g in self.fakta if g in self.kb.gejala],
-                'bukti_aturan': evidence_rules,
-                'jumlah_bukti': len(evidence_rules),
-                'semua_diagnosis': diagnosis  # Will be populated after all diagnosis generated
-            })
-        
-        filtered_diagnosis = diagnosis[:5]
+        penyakit = self.kb.penyakit[top_kode]
+        relevant_aliases = DISEASE_ALIAS_MAP.get(top_kode, {top_kode})
+        evidence_rules = [rule for rule in self.matched_rules if rule['hasil'] in relevant_aliases]
 
-        # Isi daftar hasil untuk ditampilkan ke pengguna
-        for diag in filtered_diagnosis:
-            diag['persentase'] = round(float(diag['score']) * 100.0, 2)
-            diag['semua_diagnosis'] = [
-                {
-                    'nama': d['nama'],
-                    'severity': d['severity'],
-                    'score': d['score']
-                }
-                for d in diagnosis
-            ]
-        
+        if not evidence_rules:
+            all_evidence = list(self.disease_evidence.get(top_kode, []))
+            all_evidence.sort(key=lambda r: (r.get('coverage', 0.0), r.get('matched_count', 0)), reverse=True)
+            evidence_rules = all_evidence[:3]
+
+        diag = {
+            'kode': top_kode,
+            'severity': severity_map.get(top_kode, 'unknown'),
+            'nama': penyakit.get('nama', ''),
+            'deskripsi': penyakit.get('deskripsi', ''),
+            'solusi': penyakit.get('solusi', []),
+            'score': top_score,
+            'persentase': round(float(top_score) * 100.0, 2),
+            'gejala_teramati': [g for g in self.fakta if g in self.kb.gejala],
+            'bukti_aturan': evidence_rules,
+            'jumlah_bukti': len(evidence_rules)
+        }
+
         return {
             'status': 'terdiagnosis',
-            'diagnosis': filtered_diagnosis,
+            'diagnosis': [diag],
             'gejala_teramati': [self.kb.gejala.get(g, g) for g in sorted(self.fakta)]
         }
     
