@@ -232,7 +232,7 @@ expert_diseases
 -- Aturan forward chaining (5 aturan)
 expert_rules
   id              INT AUTO_INCREMENT PK
-  code            VARCHAR(20) UNIQUE -- FC01–FC04
+  code            VARCHAR(20) UNIQUE -- FC01–FC05
   symptom_codes   TEXT               -- JSON array of symptom codes
   result_disease_code VARCHAR(10) FK → expert_diseases.code
   description     TEXT
@@ -262,12 +262,12 @@ expert_rules_expert_symptoms
 - P03 = PMK_LAKTASI (gejala ambing)
 - P05 = PMK_AKUT_GENERAL (gejala umum berat)
 
-**4 Aturan (FC01–FC04):**
+**5 Aturan (FC01–FC05):**
 
 - FC01 → P01 (oral): [G01, G02, G03, G04, G11, G18, G19, G20, G21]
 - FC02 → P02 (podal): [G01, G02, G05, G06, G15, G22, G23, G24, G25]
 - FC03 → P03 (laktasi): [G01, G02, G07, G08, G09, G26, G27]
-- FC04 → P05 (akut umum): [G01, G02, G03, G04, G05, G06, G07, G09, G11, G12, G14, G18, G20, G22, G23, G24, G26]
+- FC05 → P05 (akut umum): [G01, G02, G03, G04, G05, G06, G07, G09, G11, G12, G14, G18, G20, G22, G23, G24, G26]
 
 > **Auto-check gejala dari hasil deteksi gambar** (di `app.py:pmk_to_symptoms`):
 > Mapping ini digunakan saat redirect ke expert system via mode=image. Hanya gejala spesifik body part yang diikutkan (tanpa gejala umum):
