@@ -838,7 +838,7 @@ def expert_system_page():
         
         # Jika ada hasil prediksi berbasis image processing sebelumnya, tambahkan ke konteks
         last_prediction = session.get('last_prediction', {})
-        upload_images = session.get('upload_images_data', [])
+        upload_images = session.get('upload_images_data', []) if use_image_context else []
         image_info = None
         if use_image_context and last_prediction.get('source') == 'image_processing':
             image_info = {
@@ -866,7 +866,7 @@ def expert_system_page():
 
     # Ambil informasi gambar dari session jika hasil sebelumnya berasal dari image processing
     last_prediction = session.get('last_prediction', {})
-    upload_images = session.get('upload_images_data', [])
+    upload_images = session.get('upload_images_data', []) if use_image_context else []
     image_info = None
     if use_image_context and last_prediction.get('source') == 'image_processing':
         image_info = {

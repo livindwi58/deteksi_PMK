@@ -273,7 +273,7 @@ DEFAULT_EXPERT_RULES = [
         'display_order': 3,
     },
     {
-        'code': 'FC04',
+        'code': 'FC05',
         'symptom_codes': ['G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07', 'G09', 'G11', 'G12', 'G14', 'G18', 'G20', 'G22', 'G23', 'G24', 'G26'],
         'result_disease_code': 'P04',
         'description': 'PMK akut: demam, air liur berlebihan, luka mulut, nyeri setelah lepuh pecah, lepuh kaki/kuku, lepuh puting, produksi susu menurun, nafsu makan turun, lesu, lepuh moncong, luka meluas, edema/radang, bengkak celah kuku, telapak kaki longgar, dan puting retak',

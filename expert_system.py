@@ -167,7 +167,7 @@ class ForwardChaining:
             matched_rules = stats['matched_rules']
             avg_coverage = stats['coverage_sum'] / matched_rules if matched_rules else 0.0
             support_ratio = matched_rules / total_rules
-            evidence_strength = min(stats['best_matched_count'] / 4.0, 1.0)
+            evidence_strength = stats['best_matched_count'] / max(len(self.kb.gejala), 1)
             exact_bonus = 0.10 if stats['exact_rules'] > 0 else 0.0
 
             combined_score = (
@@ -180,7 +180,7 @@ class ForwardChaining:
             combined_score = min(combined_score, 0.99)
 
             if combined_score >= min_score_threshold:
-                self.hasil[penyakit] = combined_score
+                self.hasil[penyakit] = (combined_score, stats['best_matched_count'])
 
         self.disease_evidence = disease_evidence
 
@@ -203,7 +203,7 @@ class ForwardChaining:
             }
         
         # Urutkan hasil dari yang paling cocok
-        hasil_urut = sorted(hasil_inferensi.items(), key=lambda x: x[1], reverse=True)
+        hasil_urut = sorted(hasil_inferensi.items(), key=lambda x: (x[1][0], x[1][1]), reverse=True)
         
         # Pemetaan tingkat keparahan
         severity_map = {
@@ -214,7 +214,7 @@ class ForwardChaining:
         }
         
         diagnosis = []
-        for kode_penyakit, score in hasil_urut:
+        for kode_penyakit, (score, _matched_count) in hasil_urut:
             penyakit = self.kb.penyakit[kode_penyakit]
             relevant_aliases = DISEASE_ALIAS_MAP.get(kode_penyakit, {kode_penyakit})
             evidence_rules = [rule for rule in self.matched_rules if rule['hasil'] in relevant_aliases]
@@ -237,7 +237,7 @@ class ForwardChaining:
                 'semua_diagnosis': diagnosis  # Will be populated after all diagnosis generated
             })
         
-        filtered_diagnosis = diagnosis[:1]
+        filtered_diagnosis = diagnosis[:5]
 
         # Isi daftar hasil untuk ditampilkan ke pengguna
         for diag in filtered_diagnosis:
